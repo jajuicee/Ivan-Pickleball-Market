@@ -1,0 +1,23 @@
+@import url('https://api.fontshare.com/v2/css?f[]=tanker@400&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+    background-color: #F4F1E1; /* brand-cream */
+    color: #2C2C2A; /* brand-black */
+}
+
+h1, h2, h3, h4, .font-tanker {
+    font-family: 'Tanker', sans-serif;
+    letter-spacing: 0.05em;
+    font-weight: normal;
+}
+
+/* Prevent Tanker from bleeding into currency/mono values inside headers */
+h1 .font-mono, h2 .font-mono, h3 .font-mono, h4 .font-mono,
+.font-mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace !important;
+    letter-spacing: normal;
+}
