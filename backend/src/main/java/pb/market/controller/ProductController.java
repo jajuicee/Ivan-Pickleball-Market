@@ -8,6 +8,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 
@@ -36,8 +37,11 @@ public class ProductController {
     }
 
     @PatchMapping("/variants/{id}/add-stock")
-    public ResponseEntity<Map<String, Object>> addStock(@PathVariable Long id, @RequestParam int quantity) {
-        ProductVariant updated = productService.addStock(id, quantity);
+    public ResponseEntity<Map<String, Object>> addStock(
+            @PathVariable Long id, 
+            @RequestParam int quantity, 
+            @RequestParam(required = false) BigDecimal acquisitionPrice) {
+        ProductVariant updated = productService.addStock(id, quantity, acquisitionPrice);
         return ResponseEntity.ok(Map.of(
             "id", updated.getId(),
             "sku", updated.getSku(),

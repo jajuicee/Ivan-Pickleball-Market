@@ -5,9 +5,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pb.market.entity.Product;
 import pb.market.entity.ProductVariant;
+import pb.market.entity.StockBatch;
 import pb.market.repository.ProductRepository;
+import pb.market.repository.StockBatchRepository;
 import pb.market.repository.VariantRepository; // Using the consistent name
 
+import java.math.BigDecimal;
 import java.util.List;
 
 @Service
@@ -15,6 +18,7 @@ import java.util.List;
 public class ProductService {
     private final ProductRepository productRepository;
     private final VariantRepository variantRepository;
+    private final StockBatchRepository stockBatchRepository;
 
     public List<Product> getAllProducts() {
         // This relies on the custom @Query we added to your Repository
@@ -30,11 +34,18 @@ public class ProductService {
     }
 
     @Transactional
-    public ProductVariant addStock(Long variantId, int quantity) {
+    public ProductVariant addStock(Long variantId, int quantity, BigDecimal acquisitionPrice) {
         ProductVariant variant = variantRepository.findById(variantId)
                 .orElseThrow(() -> new RuntimeException("Variant not found with id: " + variantId));
         
         variant.setStockQuantity(variant.getStockQuantity() + quantity);
+        
+        StockBatch batch = new StockBatch();
+        batch.setVariant(variant);
+        batch.setQuantity(quantity);
+        batch.setAcquisitionPrice(acquisitionPrice);
+        stockBatchRepository.save(batch);
+        
         return variantRepository.save(variant);
     }
 }

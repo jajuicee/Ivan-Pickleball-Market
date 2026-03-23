@@ -3,7 +3,7 @@ import axios from 'axios';
 import {
     History, CheckCircle2, Clock, CreditCard,
     AlertCircle, Loader2, RefreshCw, ChevronDown, ChevronUp, Package,
-    Calendar, X, ChevronLeft, ChevronRight, Search
+    Calendar, X, ChevronLeft, ChevronRight, Search, MessageSquare
 } from 'lucide-react';
 
 const STATUS_ALL = 'ALL';
@@ -189,6 +189,7 @@ const OrderHistory = () => {
     const [filter, setFilter] = useState(STATUS_ALL);
     const [completing, setCompleting] = useState(null);
     const [expanded, setExpanded] = useState(new Set());
+    const [noteModal, setNoteModal] = useState(null);
 
     const [searchQuery, setSearchQuery] = useState('');
     const isSearching = searchQuery.trim().length > 0;
@@ -289,6 +290,7 @@ const OrderHistory = () => {
                     displayId: t.transactionId ? String(t.transactionId).split('-')[1].substring(0, 6) : String(t.id).padStart(4, '0'),
                     customerName: t.customerName,
                     paymentMethod: t.paymentMethod,
+                    paymentDetails: t.paymentDetails,
                     status: t.status,
                     date: t.transactionDate,
                     items: [],
@@ -660,8 +662,19 @@ const OrderHistory = () => {
                                                 )}
                                             </td>
                                             <td className="px-5 py-4">
-                                                <span className="flex items-center gap-1 text-zinc-600">
-                                                    <CreditCard size={13} /> {group.paymentMethod}
+                                                <span className="flex items-center gap-2">
+                                                    <span className="flex items-center gap-1 text-zinc-600">
+                                                        <CreditCard size={13} /> {group.paymentMethod}
+                                                    </span>
+                                                    {group.paymentDetails && (
+                                                        <button 
+                                                            onClick={(e) => { e.stopPropagation(); setNoteModal(group.paymentDetails); }}
+                                                            className="text-blue-500 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 p-1.5 rounded-md transition-colors"
+                                                            title="View Note"
+                                                        >
+                                                            <MessageSquare size={14} />
+                                                        </button>
+                                                    )}
                                                 </span>
                                             </td>
                                             <td className="px-5 py-4">
@@ -757,6 +770,22 @@ const OrderHistory = () => {
                     </tbody>
                 </table>
             </div>
+
+            {/* Note Modal */}
+            {noteModal && (
+                <div className="fixed inset-0 bg-zinc-950/60 z-[100] flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setNoteModal(null)}>
+                    <div className="bg-white rounded-xl shadow-2xl p-6 max-w-sm w-full border border-stone-200" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center gap-2 mb-4 border-b border-stone-100 pb-3">
+                            <MessageSquare size={18} className="text-blue-500" />
+                            <h3 className="text-sm font-bold uppercase tracking-widest text-zinc-700">Order Note</h3>
+                        </div>
+                        <p className="text-zinc-800 text-sm leading-relaxed whitespace-pre-wrap font-medium">{noteModal}</p>
+                        <button onClick={() => setNoteModal(null)} className="mt-6 w-full py-2.5 bg-stone-100 hover:bg-stone-200 text-zinc-700 font-bold rounded-lg transition-colors text-sm">
+                            Close
+                        </button>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

@@ -24,11 +24,13 @@ public class Transaction {
     private ProductVariant variant;
 
     private String customerName;
-    private String paymentMethod; // GCash, Bank Transfer, GoTyme
+    private String paymentMethod; // GCash, Bank Transfer, GoTyme, Split Payment
+    private String paymentDetails; // Detailed string if split payment (e.g., GCash (500) + Cash (300))
     private String status;        // FULL or PARTIAL
     
     private BigDecimal downpayment;
     private BigDecimal finalPrice; // The price you agreed on for this sale
+    private BigDecimal costPrice;  // The exact cost of this item from FIFO stock batches
     private LocalDateTime transactionDate;
 
     @PrePersist

@@ -1,7 +1,9 @@
 package pb.market.controller;
 
 import pb.market.entity.ProductVariant;
+import pb.market.entity.StockBatch;
 import pb.market.entity.Transaction;
+import pb.market.repository.StockBatchRepository;
 import pb.market.repository.TransactionRepository;
 import pb.market.repository.VariantRepository;
 import lombok.RequiredArgsConstructor;
@@ -19,6 +21,7 @@ import java.util.Map;
 public class TransactionController {
     private final TransactionRepository transactionRepository;
     private final VariantRepository variantRepository;
+    private final StockBatchRepository stockBatchRepository;
 
     // ── Create a new transaction + deduct 1 from stock ───────────────────────
     @Transactional
@@ -36,6 +39,18 @@ public class TransactionController {
         // Deduct stock first
         variant.setStockQuantity(variant.getStockQuantity() - 1);
         variantRepository.save(variant);
+
+        // Find oldest stock batch for FIFO
+        List<StockBatch> batches = stockBatchRepository.findByVariantIdAndRemainingQuantityGreaterThanOrderByRestockedAtAsc(variantId, 0);
+        if (!batches.isEmpty()) {
+            StockBatch oldestBatch = batches.get(0);
+            oldestBatch.setRemainingQuantity(oldestBatch.getRemainingQuantity() - 1);
+            stockBatchRepository.save(oldestBatch);
+            transaction.setCostPrice(oldestBatch.getAcquisitionPrice());
+        } else {
+            // Fallback if no valid batches
+            transaction.setCostPrice(variant.getAcquisitionPrice());
+        }
 
         // Save the transaction
         Transaction saved = transactionRepository.save(transaction);
