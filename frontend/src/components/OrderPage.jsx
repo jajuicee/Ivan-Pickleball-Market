@@ -9,7 +9,8 @@ const EMPTY_FORM = {
     customerName: '',
     paymentMethod: 'GCash',
     orderStatus: 'FULL',
-    downpayment: ''
+    downpayment: '',
+    orderNote: ''
 };
 
 const fmt = (val) =>
@@ -95,6 +96,7 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
                     variant: { id: item.variant.id },
                     customerName: formData.customerName,
                     paymentMethod: formData.paymentMethod,
+                    paymentDetails: formData.orderNote,
                     status: formData.orderStatus,
                     downpayment: 0, // Default 0, overridden on first item below
                     finalPrice: pricePerItem,
@@ -107,19 +109,25 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
             payloads[0].downpayment = parseFloat(formData.downpayment) || 0;
         }
 
-        Promise.all(payloads.map(p => axios.post('http://localhost:8080/api/transactions', p)))
-            .then(() => {
+        const processOrder = async () => {
+            try {
+                for (const p of payloads) {
+                    await axios.post('http://localhost:8080/api/transactions', p);
+                }
                 setShowSummary(false);
                 setStatus({ type: 'success', message: `Order ${generatedTransactionId} placed successfully!` });
                 resetForm();
                 if (refetchProducts) refetchProducts();
-            })
-            .catch(err => {
+            } catch (err) {
                 const msg = err.response?.data?.error || 'Error processing some items. Check inventory.';
                 setShowSummary(false);
                 setStatus({ type: 'error', message: msg });
-            })
-            .finally(() => setSubmitting(false));
+            } finally {
+                setSubmitting(false);
+            }
+        };
+
+        processOrder();
     };
 
     return (
@@ -127,7 +135,7 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
             <div className="flex-1 bg-white rounded-xl shadow-sm border border-stone-200 overflow-hidden flex flex-col lg:flex-row min-h-0">
 
                 {/* LEFT COLUMN: CART BUILDING */}
-                <div className="flex-1 p-8 border-b lg:border-b-0 lg:border-r border-stone-200">
+                <div className="flex-1 p-8 border-b lg:border-b-0 lg:border-r border-stone-200 overflow-y-auto">
                     <div className="flex items-center gap-3 mb-6">
                         <ShoppingCart className="text-zinc-600" />
                         <h2 className="text-xl font-bold text-zinc-800 uppercase tracking-wide">Multi-Item Checkout</h2>
@@ -255,7 +263,18 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
                                 <option value="Bank Transfer">Bank Transfer</option>
                                 <option value="GoTyme">GoTyme</option>
                                 <option value="Cash">Cash</option>
+                                <option value="Split Payment">Split Payment</option>
                             </select>
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-bold text-zinc-700 mb-2">Order Notes (Optional)</label>
+                            <textarea 
+                                value={formData.orderNote}
+                                onChange={e => setFormData({ ...formData, orderNote: e.target.value })}
+                                className="w-full px-4 py-2 border rounded-lg bg-white outline-none focus:ring-2 focus:ring-zinc-950 resize-none h-20 text-sm"
+                                placeholder="e.g. Paid 500 in GCash, 300 in Cash..."
+                            />
                         </div>
 
                         <div>
@@ -284,7 +303,11 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
                                 <span className="text-3xl font-black text-zinc-900">{fmt(cartTotal)}</span>
                             </div>
                             
-                            <button type="submit" disabled={cart.length === 0 || !formData.customerName}
+                            <button type="submit" disabled={
+                                cart.length === 0 || 
+                                !formData.customerName ||
+                                (isPartial && (!formData.downpayment || parseFloat(formData.downpayment) <= 0))
+                            }
                                 className="w-full bg-zinc-950 text-white px-8 py-4 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-zinc-800 disabled:bg-stone-300 disabled:cursor-not-allowed transition-all text-lg shadow-md">
                                 <ClipboardList size={20} /> Review Order
                             </button>
@@ -317,9 +340,16 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
                                     <span className="text-zinc-500 font-medium">Customer</span>
                                     <span className="font-bold text-zinc-900">{formData.customerName}</span>
                                 </div>
-                                <div className="flex justify-between">
-                                    <span className="text-zinc-500 font-medium">Payment Method</span>
-                                    <span className="font-bold text-zinc-900">{formData.paymentMethod}</span>
+                                <div className="flex justify-between items-start">
+                                    <span className="text-zinc-500 font-medium mt-1">Payment Method</span>
+                                    <div className="text-right">
+                                        <span className="font-bold text-zinc-900">{formData.paymentMethod}</span>
+                                        {formData.orderNote && (
+                                            <span className="text-xs text-zinc-500 font-mono block mt-0.5">
+                                                Note: {formData.orderNote}
+                                            </span>
+                                        )}
+                                    </div>
                                 </div>
                                 <div className="flex justify-between">
                                     <span className="text-zinc-500 font-medium">Payment Status</span>

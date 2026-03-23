@@ -9,17 +9,14 @@ const Inventory = ({ products = [], loading = false, refetchProducts }) => {
     const [displayedCount, setDisplayedCount] = useState(15);
     const tableContainerRef = useRef(null);
 
-    // --- MODAL STATE ---
-    const [isModalOpen, setIsModalOpen] = useState(false);
+    // --- RESTOCK STATE ---
+    const [queuedRestocks, setQueuedRestocks] = useState({}); // { [variantId]: { quantity: '', acquisitionPrice: '', sku: '', name: '' } }
+    const [isSummaryModalOpen, setIsSummaryModalOpen] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false);
     const [stockStatus, setStockStatus] = useState({ type: '', message: '' });
-    const [stockForm, setStockForm] = useState({ variantId: '', quantity: '' });
 
     // --- TABLE FILTER STATE (main table search bar) ---
     const [tableFilter, setTableFilter] = useState('');
-
-    // --- MODAL SEARCH STATE ---
-    const [searchQuery, setSearchQuery] = useState('');
-    const [selectedItem, setSelectedItem] = useState(null);
 
     // --- FLATTEN DATA ---
     const flattenedInventory = useMemo(() => {
@@ -43,16 +40,7 @@ const Inventory = ({ products = [], loading = false, refetchProducts }) => {
         );
     }, [products]);
 
-    // --- FILTER SEARCH RESULTS ---
-    const searchResults = useMemo(() => {
-        if (!searchQuery) return [];
-        const lowerQuery = searchQuery.toLowerCase();
-        return flattenedInventory.filter(item =>
-            item.dropdownName.toLowerCase().includes(lowerQuery) ||
-            item.sku.toLowerCase().includes(lowerQuery) ||
-            item.brand.toLowerCase().includes(lowerQuery)
-        ).slice(0, 10); // Limit to top 10 results to keep the UI clean
-    }, [searchQuery, flattenedInventory]);
+
 
     // --- FILTER TABLE ROWS (main table) ---
     const filteredInventory = useMemo(() => {
@@ -79,35 +67,59 @@ const Inventory = ({ products = [], loading = false, refetchProducts }) => {
 
     const visibleData = filteredInventory.slice(0, displayedCount);
 
-    // --- RESET MODAL HELPER ---
-    const closeModal = () => {
-        setIsModalOpen(false);
-        setStockForm({ variantId: '', quantity: '' });
-        setStockStatus({ type: '', message: '' });
-        setSearchQuery('');
-        setSelectedItem(null);
+    const handleQueueItem = (item) => {
+        setQueuedRestocks(prev => ({
+            ...prev,
+            [item.variantId]: { quantity: '', acquisitionPrice: '', sku: item.sku, name: item.dropdownName }
+        }));
     };
 
-    const handleAddStock = (e) => {
-        e.preventDefault();
+    const handleRemoveFromQueue = (variantId) => {
+        setQueuedRestocks(prev => {
+            const next = { ...prev };
+            delete next[variantId];
+            return next;
+        });
+    };
+
+    const handleUpdateQueue = (variantId, field, value) => {
+        setQueuedRestocks(prev => ({
+            ...prev,
+            [variantId]: { ...prev[variantId], [field]: value }
+        }));
+    };
+
+    const handleConfirmRestock = () => {
+        setIsSubmitting(true);
         setStockStatus({ type: '', message: '' });
 
-        if (!stockForm.variantId || !stockForm.quantity) {
-            setStockStatus({ type: 'error', message: 'Please select an item and enter a quantity.' });
-            return;
-        }
+        const requests = Object.entries(queuedRestocks).map(([variantId, data]) => {
+            if (!data.quantity || Number(data.quantity) <= 0) return Promise.resolve(); // Skip empty
+            let url = `http://localhost:8080/api/products/variants/${variantId}/add-stock?quantity=${data.quantity}`;
+            if (data.acquisitionPrice) {
+                url += `&acquisitionPrice=${data.acquisitionPrice}`;
+            }
+            return axios.patch(url);
+        });
 
-        axios.patch(`http://localhost:8080/api/products/variants/${stockForm.variantId}/add-stock?quantity=${stockForm.quantity}`)
+        Promise.all(requests)
             .then(() => {
-                setStockStatus({ type: 'success', message: 'Stock updated successfully!' });
-                if (refetchProducts) refetchProducts(); // Refresh shared data in Dashboard
-                setTimeout(() => closeModal(), 1500);
+                setStockStatus({ type: 'success', message: 'All stock updated successfully!' });
+                if (refetchProducts) refetchProducts();
+                setTimeout(() => {
+                    setIsSummaryModalOpen(false);
+                    setQueuedRestocks({});
+                    setStockStatus({ type: '', message: '' });
+                }, 1500);
             })
             .catch(err => {
                 console.error(err);
-                setStockStatus({ type: 'error', message: 'Failed to update stock. Check backend.' });
-            });
+                setStockStatus({ type: 'error', message: 'Failed to update some stock. Check backend.' });
+            })
+            .finally(() => setIsSubmitting(false));
     };
+
+    const validQueuedCount = Object.values(queuedRestocks).filter(data => data.quantity && Number(data.quantity) > 0).length;
 
     return (
         <div className="flex flex-col h-full relative">
@@ -148,12 +160,6 @@ const Inventory = ({ products = [], loading = false, refetchProducts }) => {
                         )}
                     </div>
 
-                    <button
-                        onClick={() => setIsModalOpen(true)}
-                        className="bg-zinc-950 hover:bg-zinc-800 text-white px-5 py-2.5 rounded-lg font-bold flex items-center gap-2 transition-all shadow-sm"
-                    >
-                        <PlusCircle size={18} /> Add Stock
-                    </button>
                 </div>
             </div>
 
@@ -172,6 +178,7 @@ const Inventory = ({ products = [], loading = false, refetchProducts }) => {
                             <th className="px-6 py-4">Color</th>
                             <th className="px-6 py-4">Variant</th>
                             <th className="px-6 py-4 text-right">Qty</th>
+                            <th className="px-6 py-4 text-right">Restock</th>
                         </tr>
                     </thead>
 
@@ -200,6 +207,41 @@ const Inventory = ({ products = [], loading = false, refetchProducts }) => {
                                             {row.quantity}
                                         </span>
                                     </td>
+                                    <td className="px-6 py-4 text-right w-48">
+                                        {queuedRestocks[row.variantId] ? (
+                                            <div className="flex flex-col gap-2 items-end">
+                                                <div className="flex items-center gap-2">
+                                                    <input 
+                                                        type="number" 
+                                                        placeholder="Qty" 
+                                                        min="1"
+                                                        value={queuedRestocks[row.variantId].quantity}
+                                                        onChange={(e) => handleUpdateQueue(row.variantId, 'quantity', e.target.value)}
+                                                        className="w-16 px-2 py-1 text-sm border border-stone-300 rounded focus:ring-1 focus:ring-zinc-900 outline-none"
+                                                    />
+                                                    <input 
+                                                        type="number" 
+                                                        placeholder="Price (Opt)" 
+                                                        step="0.01"
+                                                        min="0"
+                                                        value={queuedRestocks[row.variantId].acquisitionPrice}
+                                                        onChange={(e) => handleUpdateQueue(row.variantId, 'acquisitionPrice', e.target.value)}
+                                                        className="w-24 px-2 py-1 text-sm border border-stone-300 rounded focus:ring-1 focus:ring-zinc-900 outline-none"
+                                                    />
+                                                    <button onClick={() => handleRemoveFromQueue(row.variantId)} className="text-zinc-400 hover:text-red-500 p-1">
+                                                        <X size={16} />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <button 
+                                                onClick={() => handleQueueItem(row)}
+                                                className="inline-flex items-center justify-center p-1.5 text-zinc-500 hover:text-zinc-900 hover:bg-stone-100 rounded-md transition-colors"
+                                            >
+                                                <PlusCircle size={18} />
+                                            </button>
+                                        )}
+                                    </td>
                                 </tr>
                             ))
                         ) : (
@@ -213,17 +255,33 @@ const Inventory = ({ products = [], loading = false, refetchProducts }) => {
                 </table>
             </div>
 
-            {/* --- ADD STOCK MODAL --- */}
-            {isModalOpen && (
+            {/* --- FLOATING CART BAR --- */}
+            {validQueuedCount > 0 && (
+                <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-zinc-900 text-white px-6 py-4 rounded-full shadow-2xl flex items-center gap-6 z-40 animate-in slide-in-from-bottom-8">
+                    <div className="font-bold">
+                        {validQueuedCount} item{validQueuedCount !== 1 ? 's' : ''} ready to restock
+                    </div>
+                    <button 
+                        onClick={() => setIsSummaryModalOpen(true)}
+                        className="bg-white text-zinc-900 px-5 py-2 rounded-full font-bold hover:bg-stone-200 transition-colors"
+                    >
+                        Confirm Restock
+                    </button>
+                </div>
+            )}
+
+            {/* --- SUMMARY MODAL --- */}
+            {isSummaryModalOpen && (
                 <div className="fixed inset-0 bg-zinc-950/60 z-50 flex justify-center items-center p-4">
-                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-visible">
-
-                        <div className="px-6 py-4 border-b flex justify-between items-center bg-stone-50 rounded-t-xl">
-                            <h2 className="text-lg font-bold uppercase tracking-wide text-zinc-800">Receive Shipment</h2>
-                            <button onClick={closeModal} className="text-zinc-400 hover:text-red-500"><X size={20} /></button>
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
+                        <div className="px-6 py-4 border-b flex justify-between items-center bg-stone-50 shrink-0">
+                            <h2 className="text-lg font-bold uppercase tracking-wide text-zinc-800 flex items-center gap-2">
+                                <Package size={20} /> Review Restock
+                            </h2>
+                            <button onClick={() => !isSubmitting && setIsSummaryModalOpen(false)} className="text-zinc-400 hover:text-red-500"><X size={20} /></button>
                         </div>
-
-                        <div className="p-6">
+                        
+                        <div className="p-6 overflow-y-auto flex-1">
                             {stockStatus.message && (
                                 <div className={`p-3 mb-4 rounded-lg text-sm flex items-center gap-2 ${stockStatus.type === 'success' ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}`}>
                                     {stockStatus.type === 'success' ? <CheckCircle size={16} /> : <AlertCircle size={16} />}
@@ -231,95 +289,35 @@ const Inventory = ({ products = [], loading = false, refetchProducts }) => {
                                 </div>
                             )}
 
-                            <form id="stock-form" onSubmit={handleAddStock} className="space-y-6">
-
-                                {/* SEARCH & SELECT COMPONENT */}
-                                <div>
-                                    <label className="block text-sm font-bold text-zinc-700 mb-2">Search Product to Update</label>
-
-                                    {!selectedItem ? (
-                                        <div className="relative">
-                                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                                <Search size={16} className="text-zinc-400" />
-                                            </div>
-                                            <input
-                                                type="text"
-                                                value={searchQuery}
-                                                onChange={(e) => setSearchQuery(e.target.value)}
-                                                className="w-full pl-10 pr-3 py-2 border border-stone-300 rounded-lg focus:ring-2 focus:ring-zinc-900 outline-none"
-                                                placeholder="Search by SKU, Brand, or Name..."
-                                            />
-
-                                            {/* Live Dropdown Results */}
-                                            {searchQuery && (
-                                                <div className="absolute w-full mt-2 bg-white border border-stone-200 rounded-lg shadow-xl max-h-60 overflow-y-auto z-50">
-                                                    {searchResults.length > 0 ? (
-                                                        searchResults.map(item => (
-                                                            <div
-                                                                key={item.variantId}
-                                                                onClick={() => {
-                                                                    setSelectedItem(item);
-                                                                    setStockForm({ ...stockForm, variantId: item.variantId });
-                                                                    setSearchQuery('');
-                                                                }}
-                                                                className="px-4 py-3 hover:bg-stone-50 cursor-pointer border-b border-stone-100 last:border-0 transition-colors"
-                                                            >
-                                                                <div className="flex justify-between items-start">
-                                                                    <div>
-                                                                        <div className="font-bold text-zinc-900">{item.dropdownName}</div>
-                                                                        <div className="text-xs font-mono text-zinc-500 mt-1">SKU: {item.sku}</div>
-                                                                    </div>
-                                                                    <div className="text-xs font-bold bg-stone-100 text-zinc-600 px-2 py-1 rounded">
-                                                                        Stock: {item.quantity}
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                        ))
-                                                    ) : (
-                                                        <div className="px-4 py-3 text-sm text-zinc-500 text-center">No products found matching "{searchQuery}"</div>
-                                                    )}
-                                                </div>
-                                            )}
-                                        </div>
-                                    ) : (
-                                        // SELECTED ITEM DISPLAY
-                                        <div className="flex justify-between items-center p-3 border-2 border-zinc-900 rounded-lg bg-stone-50">
+                            <div className="space-y-3">
+                                {Object.entries(queuedRestocks).map(([variantId, data]) => {
+                                    if (!data.quantity || Number(data.quantity) <= 0) return null;
+                                    return (
+                                        <div key={variantId} className="flex justify-between items-center p-3 border border-stone-200 rounded-lg">
                                             <div>
-                                                <div className="text-sm font-bold text-zinc-900">{selectedItem.dropdownName}</div>
-                                                <div className="text-xs font-mono text-zinc-500">SKU: {selectedItem.sku} | Current Stock: {selectedItem.quantity}</div>
+                                                <div className="font-bold text-zinc-800">{data.name}</div>
+                                                <div className="text-xs font-mono text-zinc-500">SKU: {data.sku}</div>
                                             </div>
-                                            <button
-                                                type="button"
-                                                onClick={() => { setSelectedItem(null); setStockForm({ ...stockForm, variantId: '' }); }}
-                                                className="text-zinc-400 hover:text-red-500 p-1"
-                                                title="Clear selection"
-                                            >
-                                                <X size={20} />
-                                            </button>
+                                            <div className="text-right flex items-center gap-4">
+                                                <div>
+                                                    <div className="text-xs font-bold text-zinc-400">QTY</div>
+                                                    <div className="font-bold text-zinc-800">+{data.quantity}</div>
+                                                </div>
+                                                <div>
+                                                    <div className="text-xs font-bold text-zinc-400">COST</div>
+                                                    <div className="font-bold text-zinc-800">{data.acquisitionPrice ? `₱${Number(data.acquisitionPrice).toFixed(2)}` : 'N/A'}</div>
+                                                </div>
+                                            </div>
                                         </div>
-                                    )}
-                                </div>
-
-                                <div>
-                                    <label className="block text-sm font-bold text-zinc-700 mb-1">Quantity to Add</label>
-                                    <input
-                                        type="number"
-                                        required
-                                        min="1"
-                                        disabled={!selectedItem} // Disable until they pick an item
-                                        value={stockForm.quantity}
-                                        onChange={e => setStockForm({ ...stockForm, quantity: e.target.value })}
-                                        className="w-full px-3 py-2 border border-stone-300 rounded-lg focus:ring-2 focus:ring-zinc-900 outline-none disabled:bg-stone-100 disabled:text-zinc-400 disabled:cursor-not-allowed"
-                                        placeholder="e.g., 5"
-                                    />
-                                </div>
-                            </form>
+                                    );
+                                })}
+                            </div>
                         </div>
 
-                        <div className="p-4 border-t border-stone-200 bg-stone-50 flex justify-end gap-3 rounded-b-xl">
-                            <button onClick={closeModal} className="px-4 py-2 rounded-lg font-bold text-zinc-600 hover:bg-stone-200">Cancel</button>
-                            <button form="stock-form" type="submit" disabled={!selectedItem} className="px-4 py-2 bg-zinc-950 text-white rounded-lg font-bold flex items-center gap-2 hover:bg-zinc-800 disabled:bg-zinc-400 disabled:cursor-not-allowed">
-                                <PlusCircle size={16} /> Update Stock
+                        <div className="p-4 border-t border-stone-200 bg-stone-50 flex justify-end gap-3 shrink-0">
+                            <button onClick={() => setIsSummaryModalOpen(false)} disabled={isSubmitting} className="px-4 py-2 rounded-lg font-bold text-zinc-600 hover:bg-stone-200 disabled:opacity-50">Back</button>
+                            <button onClick={handleConfirmRestock} disabled={isSubmitting} className="px-6 py-2 bg-zinc-950 text-white rounded-lg font-bold flex items-center gap-2 hover:bg-zinc-800 disabled:bg-zinc-400 transition-colors">
+                                {isSubmitting && <Loader2 size={16} className="animate-spin" />} Submit Restock
                             </button>
                         </div>
                     </div>
