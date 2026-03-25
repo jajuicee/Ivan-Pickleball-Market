@@ -112,7 +112,7 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
         const processOrder = async () => {
             try {
                 for (const p of payloads) {
-                    await axios.post('http://localhost:8080/api/transactions', p);
+                    await axios.post(`http://${window.location.hostname}:8080/api/transactions`, p);
                 }
                 setShowSummary(false);
                 setStatus({ type: 'success', message: `Order ${generatedTransactionId} placed successfully!` });
@@ -131,11 +131,11 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
     };
 
     return (
-        <div className="w-full h-full flex flex-col space-y-6 p-4 md:p-0">
-            <div className="flex-1 bg-white rounded-xl shadow-sm border border-stone-200 overflow-hidden flex flex-col lg:flex-row min-h-0">
+        <div className="w-full lg:h-full flex flex-col space-y-6 p-4 md:p-0">
+            <div className="flex-1 bg-white rounded-xl shadow-sm border border-stone-200 lg:overflow-hidden flex flex-col lg:flex-row lg:min-h-0">
 
                 {/* LEFT COLUMN: CART BUILDING */}
-                <div className="flex-1 p-8 border-b lg:border-b-0 lg:border-r border-stone-200 overflow-y-auto">
+                <div className="flex-1 p-4 lg:p-8 border-b lg:border-b-0 lg:border-r border-stone-200 overflow-y-auto pb-24 lg:pb-8">
                     <div className="flex items-center gap-3 mb-6">
                         <ShoppingCart className="text-zinc-600" />
                         <h2 className="text-xl font-bold text-zinc-800 uppercase tracking-wide">Multi-Item Checkout</h2>
@@ -239,7 +239,7 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
                 </div>
 
                 {/* RIGHT COLUMN: CUSTOMER & PAYMENT DETAILS */}
-                <div className="w-full lg:w-[400px] bg-stone-50 p-8 flex flex-col">
+                <div className="w-full lg:w-[400px] bg-stone-50 p-4 lg:p-8 flex flex-col overflow-y-auto pb-24 lg:pb-8">
                     <form onSubmit={(e) => { e.preventDefault(); setShowSummary(true); }} className="space-y-6 flex-1 flex flex-col">
                         
                         <div>

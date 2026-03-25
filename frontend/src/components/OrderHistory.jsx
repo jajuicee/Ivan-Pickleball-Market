@@ -235,7 +235,7 @@ const OrderHistory = () => {
     const fetchTransactions = () => {
         setLoading(true);
         setError('');
-        axios.get('http://localhost:8080/api/transactions')
+        axios.get(`http://${window.location.hostname}:8080/api/transactions`)
             .then(res => setTransactions(Array.isArray(res.data) ? res.data : []))
             .catch(() => setError('Could not load order history. Is the backend running?'))
             .finally(() => setLoading(false));
@@ -253,8 +253,8 @@ const OrderHistory = () => {
         );
 
         try {
-            await Promise.all(partialIds.map(id => axios.patch(`http://localhost:8080/api/transactions/${id}/complete`)));
-            axios.get('http://localhost:8080/api/transactions').then(res => {
+            await Promise.all(partialIds.map(id => axios.patch(`http://${window.location.hostname}:8080/api/transactions/${id}/complete`)));
+            axios.get(`http://${window.location.hostname}:8080/api/transactions`).then(res => {
                 if (Array.isArray(res.data)) setTransactions(res.data);
             });
         } catch {
@@ -364,7 +364,7 @@ const OrderHistory = () => {
 
     // ─────────────────────────────────────────────────────────────────────────
     return (
-        <div className="flex flex-col h-full">
+        <div className="flex flex-col lg:h-full">
             <style>{`
                 @keyframes fadeSlideIn {
                     from { opacity: 0; transform: translateY(5px); }

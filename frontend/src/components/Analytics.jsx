@@ -218,7 +218,7 @@ const Analytics = () => {
     const fetchTransactions = () => {
         setLoading(true);
         setError('');
-        axios.get('http://localhost:8080/api/transactions')
+        axios.get(`http://${window.location.hostname}:8080/api/transactions`)
             .then(res => setTransactions(Array.isArray(res.data) ? res.data : []))
             .catch(() => setError('Could not load analytics data.'))
             .finally(() => setLoading(false));

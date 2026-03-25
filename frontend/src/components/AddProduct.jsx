@@ -43,7 +43,7 @@ const AddProduct = ({ onProductAdded }) => {
             }))
         };
 
-        axios.post('http://localhost:8080/api/products', newProduct)
+        axios.post(`http://${window.location.hostname}:8080/api/products`, newProduct)
             .then(() => {
                 setStatus({ type: 'success', message: 'Paddle and variants saved successfully!' });
                 setPaddleBase({ brandName: '', modelName: '' });
@@ -77,7 +77,7 @@ const AddProduct = ({ onProductAdded }) => {
             }]
         };
 
-        axios.post('http://localhost:8080/api/products', newMiscProduct)
+        axios.post(`http://${window.location.hostname}:8080/api/products`, newMiscProduct)
             .then(() => {
                 setStatus({ type: 'success', message: 'Item added successfully!' });
                 setMiscData({ brandName: '', name: '', category: 'Accessories', cost: '', price: '', sku: '', stockQuantity: '' });
