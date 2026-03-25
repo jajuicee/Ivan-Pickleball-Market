@@ -3,7 +3,7 @@ import axios from 'axios';
 import {
     History, CheckCircle2, Clock, CreditCard,
     AlertCircle, Loader2, RefreshCw, ChevronDown, ChevronUp, Package,
-    Calendar, X, ChevronLeft, ChevronRight, Search, MessageSquare
+    Calendar, X, ChevronLeft, ChevronRight, Search, MessageSquare, XCircle
 } from 'lucide-react';
 
 const STATUS_ALL = 'ALL';
@@ -188,6 +188,7 @@ const OrderHistory = () => {
     const [error, setError] = useState('');
     const [filter, setFilter] = useState(STATUS_ALL);
     const [completing, setCompleting] = useState(null);
+    const [cancelling, setCancelling] = useState(null);
     const [expanded, setExpanded] = useState(new Set());
     const [noteModal, setNoteModal] = useState(null);
 
@@ -264,6 +265,19 @@ const OrderHistory = () => {
             setError('Network error — could not save payment completion.');
         } finally {
             setCompleting(null);
+        }
+    };
+
+    const handleCancelOrder = async (group) => {
+        if (!window.confirm(`Cancel order #${group.displayId}? This will restock all items.`)) return;
+        setCancelling(group.orderId);
+        try {
+            await axios.post(`http://${window.location.hostname}:8080/api/transactions/cancel/${group.orderId}`);
+            fetchTransactions();
+        } catch (err) {
+            alert(err.response?.data?.error || 'Failed to cancel order.');
+        } finally {
+            setCancelling(null);
         }
     };
 
@@ -703,26 +717,44 @@ const OrderHistory = () => {
                                                 {formatDate(group.date)}
                                             </td>
                                             <td className="px-5 py-4">
-                                                {isPartial ? (
-                                                    <button
-                                                        onClick={() => handleCompleteGroup(group)}
-                                                        disabled={completing === group.orderId}
-                                                        className="flex items-center gap-1.5 px-3 py-1.5 text-white text-xs font-bold rounded-lg disabled:opacity-50 shadow-sm"
-                                                        style={{
-                                                            backgroundColor: '#16a34a',
-                                                            transition: 'background-color 150ms ease',
-                                                        }}
-                                                        onMouseEnter={e => e.currentTarget.style.backgroundColor = '#15803d'}
-                                                        onMouseLeave={e => e.currentTarget.style.backgroundColor = '#16a34a'}
-                                                    >
-                                                        {completing === group.orderId
-                                                            ? <Loader2 size={12} className="animate-spin" />
-                                                            : <CheckCircle2 size={12} />}
-                                                        Complete
-                                                    </button>
-                                                ) : (
-                                                    <span className="text-xs text-zinc-400">—</span>
-                                                )}
+                                                <div className="flex flex-col gap-1.5">
+                                                    {isPartial && (
+                                                        <button
+                                                            onClick={() => handleCompleteGroup(group)}
+                                                            disabled={completing === group.orderId}
+                                                            className="flex items-center gap-1.5 px-3 py-1.5 text-white text-xs font-bold rounded-lg disabled:opacity-50 shadow-sm"
+                                                            style={{
+                                                                backgroundColor: '#16a34a',
+                                                                transition: 'background-color 150ms ease',
+                                                            }}
+                                                            onMouseEnter={e => e.currentTarget.style.backgroundColor = '#15803d'}
+                                                            onMouseLeave={e => e.currentTarget.style.backgroundColor = '#16a34a'}
+                                                        >
+                                                            {completing === group.orderId
+                                                                ? <Loader2 size={12} className="animate-spin" />
+                                                                : <CheckCircle2 size={12} />}
+                                                            Complete
+                                                        </button>
+                                                    )}
+                                                    {group.status !== 'CANCELLED' && (
+                                                        <button
+                                                            onClick={() => handleCancelOrder(group)}
+                                                            disabled={cancelling === group.orderId}
+                                                            className="flex items-center gap-1.5 px-3 py-1.5 text-white text-xs font-bold rounded-lg disabled:opacity-50 shadow-sm"
+                                                            style={{
+                                                                backgroundColor: '#dc2626',
+                                                                transition: 'background-color 150ms ease',
+                                                            }}
+                                                            onMouseEnter={e => e.currentTarget.style.backgroundColor = '#b91c1c'}
+                                                            onMouseLeave={e => e.currentTarget.style.backgroundColor = '#dc2626'}
+                                                        >
+                                                            {cancelling === group.orderId
+                                                                ? <Loader2 size={12} className="animate-spin" />
+                                                                : <XCircle size={12} />}
+                                                            Cancel
+                                                        </button>
+                                                    )}
+                                                </div>
                                             </td>
                                         </tr>
 

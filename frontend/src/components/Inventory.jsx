@@ -86,6 +86,19 @@ const Inventory = ({ products = [], loading = false, refetchProducts }) => {
         );
     }, [tableFilter, flattenedInventory, showIncomingOnly]);
 
+    // --- SEARCH SUMMARY: group filtered results by brand+model ---
+    const searchSummary = useMemo(() => {
+        if (!tableFilter.trim()) return null;
+        const grouped = {};
+        filteredInventory.forEach(item => {
+            const key = `${item.brand} ${item.name}`;
+            if (!grouped[key]) grouped[key] = { label: key, totalQty: 0, variantCount: 0 };
+            grouped[key].totalQty += (item.quantity || 0);
+            grouped[key].variantCount += 1;
+        });
+        return Object.values(grouped);
+    }, [tableFilter, filteredInventory]);
+
     const handleScroll = () => {
         if (tableContainerRef.current) {
             const { scrollTop, scrollHeight, clientHeight } = tableContainerRef.current;
@@ -242,6 +255,20 @@ const Inventory = ({ products = [], loading = false, refetchProducts }) => {
 
                 </div>
             </div>
+
+            {/* SEARCH SUMMARY BAR */}
+            {searchSummary && searchSummary.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2 px-1 py-2 shrink-0">
+                    <span className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Total:</span>
+                    {searchSummary.map(group => (
+                        <div key={group.label} className="flex items-center gap-2 px-3 py-1.5 bg-white border border-stone-200 rounded-full shadow-sm">
+                            <span className="text-sm font-bold text-zinc-700">{group.label}</span>
+                            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-700">{group.totalQty} units</span>
+                            <span className="text-xs text-zinc-400">{group.variantCount} variant{group.variantCount !== 1 ? 's' : ''}</span>
+                        </div>
+                    ))}
+                </div>
+            )}
 
             {/* TABLE CONTAINER */}
             <div
