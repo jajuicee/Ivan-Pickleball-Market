@@ -84,4 +84,40 @@ public class TransactionController {
                 .findFirst()
                 .orElse(t));
     }
+
+    // ── Cancel an entire order group (by transactionId) + restock items ────────
+    @Transactional
+    @PostMapping("/cancel/{transactionId}")
+    public ResponseEntity<?> cancelOrder(@PathVariable String transactionId) {
+        List<Transaction> group = transactionRepository.findAllWithDetails()
+                .stream()
+                .filter(tx -> transactionId.equals(tx.getTransactionId()))
+                .toList();
+
+        if (group.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+
+        for (Transaction tx : group) {
+            // 1. Restore the variant's summary stock count (each tx = 1 unit sold)
+            ProductVariant variant = tx.getVariant();
+            int currentQty = variant.getStockQuantity() != null ? variant.getStockQuantity() : 0;
+            variant.setStockQuantity(currentQty + 1);
+            variantRepository.save(variant);
+
+            // 2. Restore the FIFO batch — add 1 unit back to the most recently consumed batch
+            List<StockBatch> batches = stockBatchRepository
+                    .findByVariantIdAndRemainingQuantityGreaterThanOrderByRestockedAtAsc(variant.getId(), -1);
+            if (!batches.isEmpty()) {
+                StockBatch batch = batches.get(batches.size() - 1);
+                batch.setRemainingQuantity(batch.getRemainingQuantity() + 1);
+                stockBatchRepository.save(batch);
+            }
+
+            // 3. Delete the transaction row entirely
+            transactionRepository.delete(tx);
+        }
+
+        return ResponseEntity.ok(Map.of("message", "Order deleted and stock restored.", "transactionId", transactionId));
+    }
 }
