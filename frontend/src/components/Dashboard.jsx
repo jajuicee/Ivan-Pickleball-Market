@@ -27,7 +27,7 @@ const Dashboard = () => {
 
     const fetchProducts = useCallback(() => {
         setLoadingProducts(true);
-        axios.get('http://localhost:8080/api/products')
+        axios.get(`http://${window.location.hostname}:8080/api/products`)
             .then(res => setProducts(Array.isArray(res.data) ? res.data : []))
             .catch(err => {
                 console.error('Failed to load products:', err);
