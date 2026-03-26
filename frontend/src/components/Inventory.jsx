@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import axios from 'axios';
-import { Package, PlusCircle, X, CheckCircle, AlertCircle, Search, Loader2, Truck } from 'lucide-react';
+import { Package, PlusCircle, MinusCircle, X, CheckCircle, AlertCircle, Search, Loader2, Truck } from 'lucide-react';
 
 // Props: products (array), loading (bool), refetchProducts (fn)
 const Inventory = ({ products = [], loading = false, refetchProducts }) => {
@@ -30,6 +30,9 @@ const Inventory = ({ products = [], loading = false, refetchProducts }) => {
     const [isIncomingModalOpen, setIsIncomingModalOpen] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [stockStatus, setStockStatus] = useState({ type: '', message: '' });
+
+    // --- DEDUCT STOCK MODAL STATE ---
+    const [deductModal, setDeductModal] = useState(null); // { variantId, name, currentQty }
 
     // --- TABLE FILTER STATE (main table search bar) ---
     const [tableFilter, setTableFilter] = useState('');
@@ -184,6 +187,17 @@ const Inventory = ({ products = [], loading = false, refetchProducts }) => {
         } catch (err) {
             console.error(err);
             alert("Failed to receive shipment. Check server logs.");
+        }
+    };
+
+    const handleDeductStock = async ({ variantId, qty }) => {
+        if (!qty || Number(qty) <= 0) return;
+        try {
+            await axios.patch(`http://${window.location.hostname}:8080/api/products/variants/${variantId}/deduct-stock?quantity=${qty}`);
+            setDeductModal(null);
+            if (refetchProducts) refetchProducts();
+        } catch (err) {
+            alert(err.response?.data?.error || 'Failed to deduct stock.');
         }
     };
 
@@ -372,6 +386,13 @@ const Inventory = ({ products = [], loading = false, refetchProducts }) => {
                                                 >
                                                     <Truck size={18} />
                                                 </button>
+                                                <button
+                                                    onClick={() => setDeductModal({ variantId: row.variantId, name: row.dropdownName, currentQty: row.quantity, qty: '', reason: 'Return to Supplier' })}
+                                                    className="inline-flex items-center justify-center p-1.5 text-zinc-500 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                                                    title="Deduct Stock / Return to Supplier"
+                                                >
+                                                    <MinusCircle size={18} />
+                                                </button>
                                             </div>
                                         )}
                                     </td>
@@ -400,6 +421,59 @@ const Inventory = ({ products = [], loading = false, refetchProducts }) => {
                     >
                         Review Actions
                     </button>
+                </div>
+            )}
+
+            {/* --- DEDUCT STOCK MODAL --- */}
+            {deductModal && (
+                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm">
+                        <div className="flex items-center gap-3 mb-5">
+                            <div className="p-2 bg-red-100 rounded-xl"><MinusCircle size={20} className="text-red-600" /></div>
+                            <div>
+                                <h3 className="font-black text-zinc-900 text-base">Deduct Stock</h3>
+                                <p className="text-xs text-zinc-500 truncate max-w-[220px]">{deductModal.name}</p>
+                            </div>
+                            <button onClick={() => setDeductModal(null)} className="ml-auto text-zinc-400 hover:text-zinc-700"><X size={18} /></button>
+                        </div>
+
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-xs font-bold text-zinc-600 mb-1">Reason</label>
+                                <select
+                                    value={deductModal.reason}
+                                    onChange={e => setDeductModal(d => ({ ...d, reason: e.target.value }))}
+                                    className="w-full px-3 py-2 border border-stone-300 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-red-400"
+                                >
+                                    <option>Return to Supplier</option>
+                                    <option>Damaged / Lost</option>
+                                    <option>Manual Adjustment</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-zinc-600 mb-1">Quantity to Deduct <span className="text-zinc-400 font-normal">(Current: {deductModal.currentQty})</span></label>
+                                <input
+                                    type="number" min="1" max={deductModal.currentQty}
+                                    value={deductModal.qty}
+                                    onChange={e => setDeductModal(d => ({ ...d, qty: e.target.value }))}
+                                    className="w-full px-3 py-2 border border-stone-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-red-400"
+                                    placeholder={`Max ${deductModal.currentQty}`}
+                                />
+                            </div>
+                        </div>
+
+                        <div className="flex gap-2 mt-6">
+                            <button
+                                onClick={() => setDeductModal(null)}
+                                className="flex-1 px-4 py-2 text-sm font-bold border border-stone-300 rounded-xl hover:bg-stone-50 transition-colors"
+                            >Cancel</button>
+                            <button
+                                onClick={() => handleDeductStock({ variantId: deductModal.variantId, qty: deductModal.qty })}
+                                disabled={!deductModal.qty || Number(deductModal.qty) <= 0}
+                                className="flex-1 px-4 py-2 text-sm font-bold bg-red-600 text-white rounded-xl hover:bg-red-700 disabled:opacity-40 transition-colors"
+                            >Confirm Deduction</button>
+                        </div>
+                    </div>
                 </div>
             )}
 
