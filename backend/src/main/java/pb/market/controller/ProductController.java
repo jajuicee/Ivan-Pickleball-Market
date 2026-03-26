@@ -2,11 +2,13 @@ package pb.market.controller;
 
 import pb.market.entity.Product;
 import pb.market.entity.ProductVariant;
+import pb.market.repository.VariantRepository;
 import pb.market.service.ProductService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import java.math.BigDecimal;
 import java.util.List;
@@ -18,6 +20,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class ProductController {
     private final ProductService productService;
+    private final VariantRepository variantRepository;
 
     @GetMapping
     public List<Product> getAll() {
@@ -47,6 +50,27 @@ public class ProductController {
             "sku", updated.getSku(),
             "stockQuantity", updated.getStockQuantity(),
             "message", "Stock updated successfully"
+        ));
+    }
+
+    @PatchMapping("/variants/{id}/deduct-stock")
+    @Transactional
+    public ResponseEntity<Map<String, Object>> deductStock(
+            @PathVariable Long id,
+            @RequestParam int quantity) {
+        ProductVariant variant = variantRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Variant not found"));
+        int current = variant.getStockQuantity() != null ? variant.getStockQuantity() : 0;
+        if (quantity > current) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Cannot deduct more than current stock (" + current + ")."));
+        }
+        variant.setStockQuantity(current - quantity);
+        variantRepository.save(variant);
+        return ResponseEntity.ok(Map.of(
+            "id", variant.getId(),
+            "sku", variant.getSku(),
+            "stockQuantity", variant.getStockQuantity(),
+            "message", "Stock deducted successfully"
         ));
     }
 
