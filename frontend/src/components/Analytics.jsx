@@ -24,10 +24,11 @@ const getStartOfWeek = (d) => {
 };
 
 const TIME_RANGES = [
-    { id: '1Y', label: 'Last 12 Months', groupBy: 'month', days: 365 },
-    { id: '6M', label: 'Last 6 Months', groupBy: 'month', days: 180 },
+    { id: '1D', label: 'Today', groupBy: 'hour', days: 0 },
+    { id: '7D', label: 'Last 7 Days', groupBy: 'day', days: 7 },
     { id: '30D', label: 'Last 30 Days', groupBy: 'day', days: 30 },
-    { id: '7D', label: 'Last 7 Days', groupBy: 'day', days: 7 }
+    { id: '6M', label: 'Last 6 Months', groupBy: 'month', days: 180 },
+    { id: '1Y', label: 'Last 12 Months', groupBy: 'month', days: 365 }
 ];
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -191,7 +192,7 @@ const Analytics = () => {
     const [transactions, setTransactions] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
-    const [timeRange, setTimeRange] = useState(TIME_RANGES[2]);
+    const [timeRange, setTimeRange] = useState(TIME_RANGES[0]);
     const [topFilter, setTopFilter] = useState('units');
     const [mainTab, setMainTab] = useState('trends');
     const [paymentFilter, setPaymentFilter] = useState('All');
@@ -237,9 +238,14 @@ const Analytics = () => {
             toDate = new Date(customRange.end);
             toDate.setHours(23, 59, 59, 999);
         } else if (timeRange) {
-            cutoffDate = new Date(now);
-            cutoffDate.setDate(now.getDate() - timeRange.days);
-            toDate = now;
+            if (timeRange.id === '1D') {
+                cutoffDate = getStartOfDay(now);
+                toDate = now;
+            } else {
+                cutoffDate = new Date(now);
+                cutoffDate.setDate(now.getDate() - timeRange.days);
+                toDate = now;
+            }
         } else {
             return { chartData: [], topProducts: [], summary: {} };
         }
@@ -265,6 +271,7 @@ const Analytics = () => {
             let groupKey;
             if (groupBy === 'month') groupKey = t.date.toLocaleString('en-PH', { month: 'short', year: 'numeric' });
             else if (groupBy === 'week') { const ws = getStartOfWeek(t.date); groupKey = ws.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }); }
+            else if (groupBy === 'hour') groupKey = t.date.toLocaleTimeString('en-PH', { hour: 'numeric', hour12: true });
             else groupKey = t.date.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' });
 
             if (!acc[groupKey]) acc[groupKey] = { name: groupKey, xDate: t.date.getTime(), revenue: 0, profit: 0, cost: 0, units: 0 };
@@ -365,7 +372,7 @@ const Analytics = () => {
                         </button>
                         {customRange && (
                             <button
-                                onClick={(e) => { e.stopPropagation(); setCustomRange(null); setTimeRange(TIME_RANGES[2]); }}
+                                onClick={(e) => { e.stopPropagation(); setCustomRange(null); setTimeRange(TIME_RANGES[0]); }}
                                 className="absolute -top-1.5 -right-1.5 text-white rounded-full w-4 h-4 flex items-center justify-center"
                                 style={{ backgroundColor: '#3f3f46', transition: 'background-color 150ms ease' }}
                                 onMouseEnter={e => e.currentTarget.style.backgroundColor = '#ef4444'}
