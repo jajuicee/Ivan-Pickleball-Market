@@ -85,6 +85,35 @@ public class TransactionController {
                 .orElse(t));
     }
 
+    // ── Update payment method for an entire order group ───────────────────────
+    @Transactional
+    @PatchMapping("/group/{transactionId}/payment")
+    public ResponseEntity<?> updatePaymentMethod(
+            @PathVariable String transactionId,
+            @RequestBody Map<String, String> body) {
+
+        String newMethod = body.get("paymentMethod");
+        if (newMethod == null || newMethod.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "paymentMethod is required."));
+        }
+
+        List<Transaction> group = transactionRepository.findAllWithDetails()
+                .stream()
+                .filter(tx -> transactionId.equals(tx.getTransactionId()))
+                .toList();
+
+        if (group.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+
+        for (Transaction tx : group) {
+            tx.setPaymentMethod(newMethod);
+            transactionRepository.save(tx);
+        }
+
+        return ResponseEntity.ok(Map.of("message", "Payment method updated.", "transactionId", transactionId));
+    }
+
     // ── Cancel an entire order group (by transactionId) + restock items ────────
     @Transactional
     @PostMapping("/cancel/{transactionId}")

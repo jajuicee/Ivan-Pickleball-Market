@@ -8,7 +8,8 @@ import {
     History,
     TrendingUp,
     ShoppingCart,
-    Loader2
+    Loader2,
+    Receipt
 } from 'lucide-react';
 
 // Main Page Components
@@ -17,6 +18,7 @@ import AddProduct from './AddProduct';
 import OrderPage from './OrderPage';
 import OrderHistory from './OrderHistory';
 import Analytics from './Analytics';
+import Expenses from './Expenses';
 
 const Dashboard = () => {
     const location = useLocation();
@@ -42,11 +44,12 @@ const Dashboard = () => {
     // ─────────────────────────────────────────────────────────────────────────
 
     const navItems = [
-        { name: 'New Order', path: '/orders', icon: ShoppingCart },
+        { name: 'New Order',    path: '/orders',     icon: ShoppingCart },
         { name: 'Add Products', path: '/add-product', icon: PackagePlus },
         { name: 'View Inventory', path: '/inventory', icon: Boxes },
-        { name: 'Order History', path: '/history', icon: History },
-        { name: 'Analytics', path: '/analytics', icon: TrendingUp },
+        { name: 'Order History', path: '/history',   icon: History },
+        { name: 'Analytics',    path: '/analytics',  icon: TrendingUp },
+        { name: 'Expenses',     path: '/expenses',   icon: Receipt },
     ];
 
     const currentTab = navItems.find(item => location.pathname.startsWith(item.path))?.name || 'Dashboard';
@@ -129,6 +132,7 @@ const Dashboard = () => {
                             <Route path="/inventory" element={<Inventory products={products} loading={loadingProducts} refetchProducts={fetchProducts} />} />
                             <Route path="/history" element={<OrderHistory />} />
                             <Route path="/analytics" element={<Analytics />} />
+                            <Route path="/expenses" element={<Expenses />} />
                         </Routes>
                     </div>
                 </div>

@@ -2,8 +2,8 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import axios from 'axios';
 import {
     History, CheckCircle2, Clock, CreditCard,
-    AlertCircle, Loader2, RefreshCw, ChevronDown, ChevronUp, Package,
-    Calendar, X, ChevronLeft, ChevronRight, Search, MessageSquare, XCircle
+    AlertCircle, Loader2, RefreshCw, ChevronDown, Package,
+    Calendar, X, ChevronLeft, ChevronRight, Search, MessageSquare, XCircle, Pen
 } from 'lucide-react';
 
 const STATUS_ALL = 'ALL';
@@ -180,6 +180,149 @@ const CalendarPicker = ({ onApply, onClose, visible }) => {
     );
 };
 
+// ── Payment Method Filter Dropdown ──────────────────────────────────────────
+
+const PaymentFilter = ({ transactions, value, onChange }) => {
+    const [open, setOpen] = useState(false);
+    const ref = useRef(null);
+
+    const methods = useMemo(() => {
+        const set = new Set(transactions.map(t => t.paymentMethod).filter(Boolean));
+        return ['All', ...Array.from(set).sort()];
+    }, [transactions]);
+
+    useEffect(() => {
+        const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, []);
+
+    const isFiltered = value !== 'All';
+
+    return (
+        <div className="relative" ref={ref}>
+            <button
+                onClick={() => setOpen(v => !v)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg border shadow-sm text-xs font-bold"
+                style={{
+                    backgroundColor: isFiltered ? '#09090b' : '#ffffff',
+                    color: isFiltered ? '#ffffff' : '#71717a',
+                    borderColor: isFiltered ? '#09090b' : '#d6d3d1',
+                    transition: 'background-color 200ms ease, color 200ms ease, border-color 200ms ease',
+                }}
+            >
+                <CreditCard size={14} />
+                <span>{isFiltered ? value : 'Payment'}</span>
+                <ChevronDown size={12} style={{ transition: 'transform 200ms ease', transform: open ? 'rotate(180deg)' : 'rotate(0deg)' }} />
+                {isFiltered && (
+                    <span onClick={(e) => { e.stopPropagation(); onChange('All'); }} className="ml-0.5 hover:text-red-300 transition-colors">
+                        <X size={11} />
+                    </span>
+                )}
+            </button>
+            <div
+                className="absolute left-0 top-10 z-50 bg-white border border-stone-200 rounded-xl shadow-2xl py-1.5 min-w-[160px]"
+                style={{
+                    opacity: open ? 1 : 0,
+                    transform: open ? 'translateY(0) scale(1)' : 'translateY(-6px) scale(0.97)',
+                    transition: 'opacity 160ms ease, transform 160ms ease',
+                    pointerEvents: open ? 'all' : 'none',
+                }}
+            >
+                {methods.map(method => (
+                    <button
+                        key={method}
+                        onClick={() => { onChange(method); setOpen(false); }}
+                        className="w-full text-left px-4 py-2 text-xs flex items-center gap-2"
+                        style={{
+                            backgroundColor: value === method ? '#f5f5f4' : 'transparent',
+                            color: value === method ? '#09090b' : '#52525b',
+                            fontWeight: value === method ? '700' : '500',
+                        }}
+                        onMouseEnter={e => { if (value !== method) e.currentTarget.style.backgroundColor = '#fafaf9'; }}
+                        onMouseLeave={e => { if (value !== method) e.currentTarget.style.backgroundColor = 'transparent'; }}
+                    >
+                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${value === method ? 'bg-zinc-800' : 'bg-transparent'}`} />
+                        {method}
+                    </button>
+                ))}
+            </div>
+        </div>
+    );
+};
+
+// ── Edit Payment Modal (fixed, appears above everything) ─────────────────────
+const EditPaymentModal = ({ group, methods, onSave, onClose }) => {
+    const [value, setValue] = useState(group.paymentMethod || '');
+    const [custom, setCustom] = useState(
+        methods.includes(group.paymentMethod) ? '' : (group.paymentMethod || '')
+    );
+    const [isCustom, setIsCustom] = useState(!methods.includes(group.paymentMethod));
+
+    const handleSubmit = () => {
+        const final = isCustom ? custom.trim() : value;
+        if (final) onSave(final);
+    };
+
+    return (
+        <div
+            className="fixed inset-0 bg-zinc-950/50 z-[200] flex items-center justify-center p-4 backdrop-blur-sm"
+            onClick={onClose}
+            style={{ animation: 'fadeSlideIn 150ms ease' }}
+        >
+            <div
+                className="bg-white rounded-2xl shadow-2xl p-5 w-64 border border-stone-200"
+                onClick={e => e.stopPropagation()}
+            >
+                <div className="flex items-center gap-2 mb-4 pb-3 border-b border-stone-100">
+                    <CreditCard size={16} className="text-zinc-500" />
+                    <h3 className="text-sm font-bold uppercase tracking-widest text-zinc-700">Change Payment</h3>
+                </div>
+                <div className="flex flex-col gap-1 mb-3">
+                    {methods.map(m => (
+                        <button
+                            key={m}
+                            onClick={() => { setValue(m); setIsCustom(false); }}
+                            className="text-left px-3 py-2 rounded-lg text-xs font-medium flex items-center gap-2"
+                            style={{
+                                backgroundColor: value === m && !isCustom ? '#09090b' : '#f5f5f4',
+                                color: value === m && !isCustom ? '#fff' : '#3f3f46',
+                                transition: 'background-color 120ms ease, color 120ms ease',
+                            }}
+                        >
+                            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${value === m && !isCustom ? 'bg-white' : 'bg-transparent'}`} />
+                            {m}
+                        </button>
+                    ))}
+                    <button
+                        onClick={() => { setIsCustom(true); setValue(''); }}
+                        className="text-left px-3 py-2 rounded-lg text-xs font-medium"
+                        style={{
+                            backgroundColor: isCustom ? '#09090b' : '#f5f5f4',
+                            color: isCustom ? '#fff' : '#3f3f46',
+                            transition: 'background-color 120ms ease, color 120ms ease',
+                        }}
+                    >Custom…</button>
+                </div>
+                {isCustom && (
+                    <input
+                        autoFocus
+                        value={custom}
+                        onChange={e => setCustom(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') handleSubmit(); if (e.key === 'Escape') onClose(); }}
+                        placeholder="e.g. Maya, Check…"
+                        className="w-full px-3 py-2 text-xs border border-stone-300 rounded-lg mb-3 focus:outline-none focus:ring-2 focus:ring-zinc-300"
+                    />
+                )}
+                <div className="flex gap-2">
+                    <button onClick={onClose} className="flex-1 py-2 text-xs font-bold rounded-lg border border-stone-200 text-zinc-500 hover:bg-stone-50 transition-colors">Cancel</button>
+                    <button onClick={handleSubmit} className="flex-1 py-2 text-xs font-bold rounded-lg bg-zinc-950 text-white hover:bg-zinc-800 transition-colors">Save</button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 const OrderHistory = () => {
@@ -191,6 +334,8 @@ const OrderHistory = () => {
     const [cancelling, setCancelling] = useState(null);
     const [expanded, setExpanded] = useState(new Set());
     const [noteModal, setNoteModal] = useState(null);
+    const [paymentFilter, setPaymentFilter] = useState('All');
+    const [editingPayment, setEditingPayment] = useState(null); // orderId being edited
 
     const [searchQuery, setSearchQuery] = useState('');
     const isSearching = searchQuery.trim().length > 0;
@@ -281,6 +426,21 @@ const OrderHistory = () => {
         }
     };
 
+    const handleUpdatePayment = async (group, newMethod) => {
+        setEditingPayment(null);
+        // Optimistic update
+        setTransactions(prev =>
+            prev.map(t => t.transactionId === group.orderId ? { ...t, paymentMethod: newMethod } : t)
+        );
+        try {
+            await axios.patch(`http://${window.location.hostname}:8080/api/transactions/group/${group.orderId}/payment`, { paymentMethod: newMethod });
+            fetchTransactions();
+        } catch {
+            setError('Could not update payment method.');
+            fetchTransactions();
+        }
+    };
+
     const dateWindow = useMemo(() => {
         if (customRange) return { start: customRange.start, end: endOfDay(customRange.end) };
         if (activePreset) return getRangeForPreset(activePreset);
@@ -339,9 +499,13 @@ const OrderHistory = () => {
             });
         }
 
+        if (paymentFilter !== 'All') {
+            allGroups = allGroups.filter(g => g.paymentMethod === paymentFilter);
+        }
+
         if (filter === STATUS_ALL) return allGroups;
         return allGroups.filter(g => g.status === filter);
-    }, [filter, transactions, dateWindow, searchQuery, isSearching]);
+    }, [filter, transactions, dateWindow, searchQuery, isSearching, paymentFilter]);
 
     const counts = useMemo(() => {
         const windowedTxs = dateWindow
@@ -364,6 +528,12 @@ const OrderHistory = () => {
             partial: arr.filter(s => s === 'PARTIAL').length,
         };
     }, [transactions, dateWindow]);
+
+    // Unique payment methods in data — mirrors Analytics PaymentFilter options
+    const paymentMethods = useMemo(() => {
+        const set = new Set(transactions.map(t => t.paymentMethod).filter(Boolean));
+        return Array.from(set).sort();
+    }, [transactions]);
 
     const periodLabel = customRange
         ? customRange.label
@@ -477,6 +647,9 @@ const OrderHistory = () => {
                         </span>
                     </button>
                 ))}
+
+                {/* PAYMENT FILTER */}
+                <PaymentFilter transactions={transactions} value={paymentFilter} onChange={setPaymentFilter} />
 
                 {/* Spacer */}
                 <div className="flex-1" />
@@ -676,12 +849,18 @@ const OrderHistory = () => {
                                                 )}
                                             </td>
                                             <td className="px-5 py-4">
-                                                <span className="flex items-center gap-2">
-                                                    <span className="flex items-center gap-1 text-zinc-600">
-                                                        <CreditCard size={13} /> {group.paymentMethod}
+                                                <div className="flex items-center gap-2">
+                                                    <span
+                                                        className="flex items-center gap-1 text-zinc-600 cursor-pointer hover:text-zinc-900 group"
+                                                        onClick={(e) => { e.stopPropagation(); setEditingPayment(editingPayment === group.orderId ? null : group.orderId); }}
+                                                        title="Click to change payment method"
+                                                    >
+                                                        <CreditCard size={13} />
+                                                        <span className="font-medium">{group.paymentMethod}</span>
+                                                        <Pen size={11} className="text-zinc-400 group-hover:text-zinc-600 transition-colors" />
                                                     </span>
                                                     {group.paymentDetails && (
-                                                        <button 
+                                                        <button
                                                             onClick={(e) => { e.stopPropagation(); setNoteModal(group.paymentDetails); }}
                                                             className="text-blue-500 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 p-1.5 rounded-md transition-colors"
                                                             title="View Note"
@@ -689,7 +868,7 @@ const OrderHistory = () => {
                                                             <MessageSquare size={14} />
                                                         </button>
                                                     )}
-                                                </span>
+                                                </div>
                                             </td>
                                             <td className="px-5 py-4">
                                                 {isPartial ? (
@@ -818,6 +997,19 @@ const OrderHistory = () => {
                     </div>
                 </div>
             )}
+
+            {/* Edit Payment Modal */}
+            {editingPayment && (() => {
+                const group = groupedOrders.find(g => g.orderId === editingPayment);
+                return group ? (
+                    <EditPaymentModal
+                        group={group}
+                        methods={paymentMethods}
+                        onSave={(newMethod) => handleUpdatePayment(group, newMethod)}
+                        onClose={() => setEditingPayment(null)}
+                    />
+                ) : null;
+            })()}
         </div>
     );
 };
