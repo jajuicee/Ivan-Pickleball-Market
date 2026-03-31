@@ -8,7 +8,8 @@ import {
     Boxes,
     ClipboardList,
     Building2,
-    Loader2
+    Loader2,
+    Truck
 } from 'lucide-react';
 
 // Main Page Components
@@ -18,6 +19,7 @@ import AddProduct from './AddProduct';
 import Inventory from './Inventory';
 import ManageInventory from './ManageInventory';
 import Suppliers from './Suppliers';
+import Supplies from './Supplies';
 
 const TabletLayout = () => {
     const location = useLocation();
@@ -49,6 +51,7 @@ const TabletLayout = () => {
         { name: 'Add Product',  path: '/tablet/add-product',      icon: PackagePlus },
         { name: 'Stock',        path: '/tablet/inventory',        icon: Boxes },
         { name: 'Manage Inv.',  path: '/tablet/manage-inventory', icon: ClipboardList },
+        { name: 'Supplies',     path: '/tablet/supplies',         icon: Truck },
         { name: 'Suppliers',    path: '/tablet/suppliers',        icon: Building2 },
     ];
 
@@ -104,6 +107,7 @@ const TabletLayout = () => {
                         <Route path="add-product"      element={<AddProduct onProductAdded={fetchProducts} />} />
                         <Route path="inventory"        element={<Inventory products={products} loading={loadingProducts} refetchProducts={fetchProducts} />} />
                         <Route path="manage-inventory" element={<ManageInventory products={products} loading={loadingProducts} refetchProducts={fetchProducts} />} />
+                        <Route path="supplies"         element={<Supplies />} />
                         <Route path="suppliers"        element={<Suppliers />} />
                     </Routes>
                 </div>

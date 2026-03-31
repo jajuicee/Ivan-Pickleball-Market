@@ -31,11 +31,11 @@ public class StockBatch {
     private Supplier supplier;
 
     // Whether this batch is consigned (not owned outright)
-    @Column(columnDefinition = "boolean default false")
+    @Column(nullable = false)
     private boolean consigned = false;
 
     // Status of the batch: PENDING, INCOMING, or RECEIVED
-    @Column(columnDefinition = "varchar(20) default 'RECEIVED'")
+    @Column(nullable = false, length = 20)
     private String status = "RECEIVED";
 
     // Groups items added in the same "Batch Add" action for reverting
