@@ -23,7 +23,9 @@ public class ProductVariant {
 
     private BigDecimal acquisitionPrice;
     private BigDecimal sellingPrice;
+    @Formula("(SELECT COALESCE(SUM(s.remaining_quantity), 0) FROM stock_batches s WHERE s.variant_id = id AND s.status = 'RECEIVED')")
     private Integer stockQuantity;
+
     
     // Virtual fields using subqueries (formula) to count all-time additions and sales.
     // POPULATED MANUALLY IN ProductService

@@ -60,8 +60,6 @@ public class BatchActionController {
              // 1. Update total stock ONLY if RECEIVED
             String status = request.getStatus() != null && request.getStatus().equals("INCOMING") ? "INCOMING" : "RECEIVED";
             if ("RECEIVED".equals(status)) {
-                variant.setStockQuantity((variant.getStockQuantity() == null ? 0 : variant.getStockQuantity()) + item.getQuantity());
-                variantRepository.save(variant);
             }
 
             // 2. Create StockBatch
@@ -115,9 +113,6 @@ public class BatchActionController {
             ProductVariant variant = batch.getVariant();
             // Try to deduct the quantity, but floor at 0 (ONLY if it was RECEIVED)
             if ("RECEIVED".equals(batch.getStatus())) {
-                int originalQty = variant.getStockQuantity() != null ? variant.getStockQuantity() : 0;
-                variant.setStockQuantity(Math.max(0, originalQty - batch.getQuantity()));
-                variantRepository.save(variant);
             }
         }
 
@@ -193,8 +188,6 @@ public class BatchActionController {
             if ("INCOMING".equals(batch.getStatus())) {
                 batch.setStatus("RECEIVED");
                 ProductVariant variant = batch.getVariant();
-                variant.setStockQuantity((variant.getStockQuantity() == null ? 0 : variant.getStockQuantity()) + batch.getQuantity());
-                variantRepository.save(variant);
                 stockBatchRepository.save(batch);
                 updated = true;
             }
