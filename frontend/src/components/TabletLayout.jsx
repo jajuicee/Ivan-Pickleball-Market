@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import { Routes, Route, Link, useLocation, Navigate, useNavigate } from 'react-router-dom';
+import { Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
 import {
     ShoppingCart,
     History,
     PackagePlus,
     Boxes,
+    ClipboardList,
+    Building2,
     Loader2
 } from 'lucide-react';
 
@@ -14,6 +16,8 @@ import OrderPage from './OrderPage';
 import OrderHistory from './OrderHistory';
 import AddProduct from './AddProduct';
 import Inventory from './Inventory';
+import ManageInventory from './ManageInventory';
+import Suppliers from './Suppliers';
 
 const TabletLayout = () => {
     const location = useLocation();
@@ -40,15 +44,17 @@ const TabletLayout = () => {
     // ─────────────────────────────────────────────────────────────────────────
 
     const navItems = [
-        { name: 'New Order', path: '/tablet/orders', icon: ShoppingCart },
-        { name: 'Order History', path: '/tablet/history', icon: History },
-        { name: 'Add Product', path: '/tablet/add-product', icon: PackagePlus },
-        { name: 'Inventory', path: '/tablet/inventory', icon: Boxes }
+        { name: 'New Order',    path: '/tablet/orders',           icon: ShoppingCart },
+        { name: 'History',      path: '/tablet/history',          icon: History },
+        { name: 'Add Product',  path: '/tablet/add-product',      icon: PackagePlus },
+        { name: 'Stock',        path: '/tablet/inventory',        icon: Boxes },
+        { name: 'Manage Inv.',  path: '/tablet/manage-inventory', icon: ClipboardList },
+        { name: 'Suppliers',    path: '/tablet/suppliers',        icon: Building2 },
     ];
 
     const currentTab = navItems.find(item => location.pathname.startsWith(item.path))?.name || 'POS System';
 
-    // If accessing the root of tablet, redirect to orders
+    // Redirect /tablet root to orders
     useEffect(() => {
         if (location.pathname === '/tablet' || location.pathname === '/tablet/') {
             navigate('/tablet/orders', { replace: true });
@@ -57,7 +63,7 @@ const TabletLayout = () => {
 
     return (
         <div className="flex flex-col h-[100dvh] w-screen bg-[#F7F6F0] font-sans text-brand-black overflow-hidden relative">
-            
+
             {/* --- TOP HEADER --- */}
             <header className="bg-white border-b border-brand-black/10 px-6 py-4 flex justify-between items-center z-10 shadow-sm shrink-0">
                 <div className="flex items-center gap-3">
@@ -93,17 +99,19 @@ const TabletLayout = () => {
                     style={{ animation: 'pageSlideIn 300ms ease-out both' }}
                 >
                     <Routes>
-                        <Route path="orders" element={<OrderPage products={products} loading={loadingProducts} refetchProducts={fetchProducts} />} />
-                        <Route path="history" element={<OrderHistory />} />
-                        <Route path="add-product" element={<AddProduct onProductAdded={fetchProducts} />} />
-                        <Route path="inventory" element={<Inventory products={products} loading={loadingProducts} refetchProducts={fetchProducts} />} />
+                        <Route path="orders"           element={<OrderPage products={products} loading={loadingProducts} refetchProducts={fetchProducts} />} />
+                        <Route path="history"          element={<OrderHistory />} />
+                        <Route path="add-product"      element={<AddProduct onProductAdded={fetchProducts} />} />
+                        <Route path="inventory"        element={<Inventory products={products} loading={loadingProducts} refetchProducts={fetchProducts} />} />
+                        <Route path="manage-inventory" element={<ManageInventory products={products} loading={loadingProducts} refetchProducts={fetchProducts} />} />
+                        <Route path="suppliers"        element={<Suppliers />} />
                     </Routes>
                 </div>
             </main>
 
-            {/* --- FIXED BOTTOM NAVIGATION (iOS/Android Tablet style) --- */}
+            {/* --- FIXED BOTTOM NAVIGATION --- */}
             <nav className="fixed bottom-0 left-0 w-full bg-white/90 backdrop-blur-xl border-t border-stone-200 shadow-[0_-8px_30px_rgba(0,0,0,0.06)] z-50 pb-[env(safe-area-inset-bottom)]">
-                <div className="flex justify-around items-center px-2 py-3 max-w-2xl mx-auto">
+                <div className="flex justify-around items-center px-1 py-2 max-w-3xl mx-auto">
                     {navItems.map((item) => {
                         const Icon = item.icon;
                         const isActive = location.pathname.startsWith(item.path);
@@ -111,16 +119,14 @@ const TabletLayout = () => {
                             <Link
                                 key={item.name}
                                 to={item.path}
-                                className={`flex flex-col items-center justify-center gap-1.5 min-w-[120px] p-2 rounded-xl transition-all duration-200 ${
-                                    isActive
-                                        ? 'text-blue-600 scale-105'
-                                        : 'text-zinc-400 hover:text-zinc-600 hover:bg-stone-50'
+                                className={`flex flex-col items-center justify-center gap-1 min-w-0 flex-1 p-2 rounded-xl transition-all duration-200 ${
+                                    isActive ? 'text-blue-600 scale-105' : 'text-zinc-400 hover:text-zinc-600 hover:bg-stone-50'
                                 }`}
                             >
-                                <div className={`p-2 rounded-2xl ${isActive ? 'bg-blue-100 shadow-sm' : ''}`}>
-                                    <Icon size={24} strokeWidth={isActive ? 2.5 : 2} />
+                                <div className={`p-1.5 rounded-2xl ${isActive ? 'bg-blue-100 shadow-sm' : ''}`}>
+                                    <Icon size={22} strokeWidth={isActive ? 2.5 : 2} />
                                 </div>
-                                <span className={`text-[11px] uppercase tracking-wider ${isActive ? 'font-black' : 'font-bold'}`}>
+                                <span className={`text-[10px] uppercase tracking-wider ${isActive ? 'font-black' : 'font-bold'}`}>
                                     {item.name}
                                 </span>
                             </Link>

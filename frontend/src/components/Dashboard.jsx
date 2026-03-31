@@ -9,7 +9,11 @@ import {
     TrendingUp,
     ShoppingCart,
     Loader2,
-    Receipt
+    Receipt,
+    ClipboardList,
+    Building2,
+    Truck,
+    BarChart2
 } from 'lucide-react';
 
 // Main Page Components
@@ -19,6 +23,9 @@ import OrderPage from './OrderPage';
 import OrderHistory from './OrderHistory';
 import Analytics from './Analytics';
 import Expenses from './Expenses';
+import ManageInventory from './ManageInventory';
+import Supplies from './Supplies';
+import ProductSales from './ProductSales';
 
 const Dashboard = () => {
     const location = useLocation();
@@ -44,12 +51,15 @@ const Dashboard = () => {
     // ─────────────────────────────────────────────────────────────────────────
 
     const navItems = [
-        { name: 'New Order',    path: '/orders',     icon: ShoppingCart },
-        { name: 'Add Products', path: '/add-product', icon: PackagePlus },
-        { name: 'View Inventory', path: '/inventory', icon: Boxes },
-        { name: 'Order History', path: '/history',   icon: History },
-        { name: 'Analytics',    path: '/analytics',  icon: TrendingUp },
-        { name: 'Expenses',     path: '/expenses',   icon: Receipt },
+        { name: 'New Order',       path: '/orders',           icon: ShoppingCart },
+        { name: 'Add Products',    path: '/add-product',      icon: PackagePlus },
+        { name: 'View Inventory',  path: '/inventory',        icon: Boxes },
+        { name: 'Manage Inventory',path: '/manage-inventory', icon: ClipboardList },
+        { name: 'Supplies',        path: '/supplies',         icon: Truck },
+        { name: 'Product Sales',   path: '/product-sales',    icon: BarChart2 },
+        { name: 'Order History',   path: '/history',          icon: History },
+        { name: 'Analytics',       path: '/analytics',        icon: TrendingUp },
+        { name: 'Expenses',        path: '/expenses',         icon: Receipt },
     ];
 
     const currentTab = navItems.find(item => location.pathname.startsWith(item.path))?.name || 'Dashboard';
@@ -130,6 +140,9 @@ const Dashboard = () => {
                             <Route path="/orders" element={<OrderPage products={products} loading={loadingProducts} refetchProducts={fetchProducts} />} />
                             <Route path="/add-product" element={<AddProduct onProductAdded={fetchProducts} />} />
                             <Route path="/inventory" element={<Inventory products={products} loading={loadingProducts} refetchProducts={fetchProducts} />} />
+                            <Route path="/manage-inventory" element={<ManageInventory products={products} loading={loadingProducts} refetchProducts={fetchProducts} />} />
+                            <Route path="/supplies" element={<Supplies />} />
+                            <Route path="/product-sales" element={<ProductSales products={products} />} />
                             <Route path="/history" element={<OrderHistory />} />
                             <Route path="/analytics" element={<Analytics />} />
                             <Route path="/expenses" element={<Expenses />} />

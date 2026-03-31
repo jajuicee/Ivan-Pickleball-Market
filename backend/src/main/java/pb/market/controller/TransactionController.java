@@ -40,8 +40,8 @@ public class TransactionController {
         variant.setStockQuantity(variant.getStockQuantity() - 1);
         variantRepository.save(variant);
 
-        // Find oldest stock batch for FIFO
-        List<StockBatch> batches = stockBatchRepository.findByVariantIdAndRemainingQuantityGreaterThanOrderByRestockedAtAsc(variantId, 0);
+        // Find oldest stock batch for FIFO (ONLY RECEIVED!)
+        List<StockBatch> batches = stockBatchRepository.findByVariantIdAndStatusAndRemainingQuantityGreaterThanOrderByConsignedAscRestockedAtAsc(variantId, "RECEIVED", 0);
         if (!batches.isEmpty()) {
             StockBatch oldestBatch = batches.get(0);
             oldestBatch.setRemainingQuantity(oldestBatch.getRemainingQuantity() - 1);
@@ -97,10 +97,13 @@ public class TransactionController {
             return ResponseEntity.badRequest().body(Map.of("error", "paymentMethod is required."));
         }
 
-        List<Transaction> group = transactionRepository.findAllWithDetails()
-                .stream()
-                .filter(tx -> transactionId.equals(tx.getTransactionId()))
-                .toList();
+        List<Transaction> group;
+        if (transactionId.startsWith("LEGACY-")) {
+            Long id = Long.parseLong(transactionId.replace("LEGACY-", ""));
+            group = transactionRepository.findAllWithDetails().stream().filter(tx -> tx.getId().equals(id)).toList();
+        } else {
+            group = transactionRepository.findAllWithDetails().stream().filter(tx -> transactionId.equals(tx.getTransactionId())).toList();
+        }
 
         if (group.isEmpty()) {
             return ResponseEntity.notFound().build();
@@ -118,10 +121,13 @@ public class TransactionController {
     @Transactional
     @PostMapping("/cancel/{transactionId}")
     public ResponseEntity<?> cancelOrder(@PathVariable String transactionId) {
-        List<Transaction> group = transactionRepository.findAllWithDetails()
-                .stream()
-                .filter(tx -> transactionId.equals(tx.getTransactionId()))
-                .toList();
+        List<Transaction> group;
+        if (transactionId.startsWith("LEGACY-")) {
+            Long id = Long.parseLong(transactionId.replace("LEGACY-", ""));
+            group = transactionRepository.findAllWithDetails().stream().filter(tx -> tx.getId().equals(id)).toList();
+        } else {
+            group = transactionRepository.findAllWithDetails().stream().filter(tx -> transactionId.equals(tx.getTransactionId())).toList();
+        }
 
         if (group.isEmpty()) {
             return ResponseEntity.notFound().build();
@@ -134,19 +140,19 @@ public class TransactionController {
             variant.setStockQuantity(currentQty + 1);
             variantRepository.save(variant);
 
-            // 2. Restore the FIFO batch — add 1 unit back to the most recently consumed batch
+            // 2. Restore the FIFO batch — add 1 unit back to the most recently consumed RECEIVED batch
             List<StockBatch> batches = stockBatchRepository
-                    .findByVariantIdAndRemainingQuantityGreaterThanOrderByRestockedAtAsc(variant.getId(), -1);
+                .findByVariantIdAndStatusOrderByRestockedAtDesc(variant.getId(), "RECEIVED");
             if (!batches.isEmpty()) {
-                StockBatch batch = batches.get(batches.size() - 1);
+                StockBatch batch = batches.get(0);
                 batch.setRemainingQuantity(batch.getRemainingQuantity() + 1);
                 stockBatchRepository.save(batch);
             }
 
-            // 3. Delete the transaction row entirely
+            // 3. Delete the transaction row entirely so it's fully erased from history
             transactionRepository.delete(tx);
         }
 
-        return ResponseEntity.ok(Map.of("message", "Order deleted and stock restored.", "transactionId", transactionId));
+        return ResponseEntity.ok(Map.of("message", "Order completely erased and stock restored.", "transactionId", transactionId));
     }
 }

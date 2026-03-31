@@ -9,6 +9,7 @@ import {
 const STATUS_ALL = 'ALL';
 const STATUS_FULL = 'FULL';
 const STATUS_PARTIAL = 'PARTIAL';
+const STATUS_UNPAID = 'UNPAID';
 
 const formatDate = (iso) => {
     if (!iso) return '—';
@@ -336,6 +337,10 @@ const OrderHistory = () => {
     const [noteModal, setNoteModal] = useState(null);
     const [paymentFilter, setPaymentFilter] = useState('All');
     const [editingPayment, setEditingPayment] = useState(null); // orderId being edited
+    // Fix #10: Styled confirmation modal state
+    const [confirmModal, setConfirmModal] = useState(null); // { group }
+    // Fix #11: Toast notification state
+    const [toast, setToast] = useState(null); // { message, type }
 
     const [searchQuery, setSearchQuery] = useState('');
     const isSearching = searchQuery.trim().length > 0;
@@ -389,23 +394,21 @@ const OrderHistory = () => {
 
     useEffect(() => { fetchTransactions(); }, []);
 
-    const handleCompleteGroup = async (group) => {
-        setCompleting(group.orderId);
-        const partialIds = group.items.filter(i => i.status === 'PARTIAL').map(i => i.id);
-        if (partialIds.length === 0) return;
+    const handleCompleteItem = async (item) => {
+        setCompleting(item.id);
 
         setTransactions(prev =>
-            prev.map(t => partialIds.includes(t.id) ? { ...t, status: 'FULL' } : t)
+            prev.map(t => t.id === item.id ? { ...t, status: 'FULL' } : t)
         );
 
         try {
-            await Promise.all(partialIds.map(id => axios.patch(`http://${window.location.hostname}:8080/api/transactions/${id}/complete`)));
+            await axios.patch(`http://${window.location.hostname}:8080/api/transactions/${item.id}/complete`);
             axios.get(`http://${window.location.hostname}:8080/api/transactions`).then(res => {
                 if (Array.isArray(res.data)) setTransactions(res.data);
             });
         } catch {
             setTransactions(prev =>
-                prev.map(t => partialIds.includes(t.id) ? { ...t, status: 'PARTIAL' } : t)
+                prev.map(t => t.id === item.id ? { ...t, status: item.status } : t)
             );
             setError('Network error — could not save payment completion.');
         } finally {
@@ -413,14 +416,26 @@ const OrderHistory = () => {
         }
     };
 
+    const showToast = (message, type = 'success') => {
+        setToast({ message, type });
+        setTimeout(() => setToast(null), 3500);
+    };
+
     const handleCancelOrder = async (group) => {
-        if (!window.confirm(`Cancel order #${group.displayId}? This will restock all items.`)) return;
+        // Fix #10: use styled modal instead of window.confirm
+        setConfirmModal(group);
+    };
+
+    const confirmCancel = async (group) => {
+        setConfirmModal(null);
         setCancelling(group.orderId);
         try {
             await axios.post(`http://${window.location.hostname}:8080/api/transactions/cancel/${group.orderId}`);
             fetchTransactions();
+            // Fix #11: show success toast
+            showToast(`Order #${group.displayId} cancelled and stock restored.`, 'success');
         } catch (err) {
-            alert(err.response?.data?.error || 'Failed to cancel order.');
+            showToast(err.response?.data?.error || 'Failed to cancel order.', 'error');
         } finally {
             setCancelling(null);
         }
@@ -428,9 +443,12 @@ const OrderHistory = () => {
 
     const handleUpdatePayment = async (group, newMethod) => {
         setEditingPayment(null);
-        // Optimistic update
+        // Fix #7: Optimistic update handles both LEGACY and normal orders
         setTransactions(prev =>
-            prev.map(t => t.transactionId === group.orderId ? { ...t, paymentMethod: newMethod } : t)
+            prev.map(t => {
+                const txGroupId = t.transactionId || `LEGACY-${t.id}`;
+                return txGroupId === group.orderId ? { ...t, paymentMethod: newMethod } : t;
+            })
         );
         try {
             await axios.patch(`http://${window.location.hostname}:8080/api/transactions/group/${group.orderId}/payment`, { paymentMethod: newMethod });
@@ -476,6 +494,7 @@ const OrderHistory = () => {
             acc[key].totalPrice += parseFloat(t.finalPrice || 0);
             acc[key].totalDownpayment += parseFloat(t.downpayment || 0);
             if (t.status === 'PARTIAL') acc[key].status = 'PARTIAL';
+            if (t.status === 'UNPAID') acc[key].status = 'UNPAID';
             return acc;
         }, {});
 
@@ -519,13 +538,14 @@ const OrderHistory = () => {
             const key = t.transactionId || `LEGACY-${t.id}`;
             if (!acc[key]) acc[key] = t.status;
             if (t.status === 'PARTIAL') acc[key] = 'PARTIAL';
+            if (t.status === 'UNPAID') acc[key] = 'UNPAID';
             return acc;
         }, {});
         const arr = Object.values(groups);
         return {
             all: arr.length,
             full: arr.filter(s => s === 'FULL').length,
-            partial: arr.filter(s => s === 'PARTIAL').length,
+            partial_unpaid: arr.filter(s => s === 'PARTIAL' || s === 'UNPAID').length,
         };
     }, [transactions, dateWindow]);
 
@@ -554,7 +574,54 @@ const OrderHistory = () => {
                     from { opacity: 0; transform: translateY(5px); }
                     to   { opacity: 1; transform: translateY(0); }
                 }
+                @keyframes toastIn {
+                    from { opacity: 0; transform: translateY(16px) scale(0.97); }
+                    to   { opacity: 1; transform: translateY(0) scale(1); }
+                }
             `}</style>
+
+            {/* Fix #11: Toast notification */}
+            {toast && (
+                <div
+                    className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-3 px-5 py-3 rounded-xl shadow-2xl text-sm font-bold text-white`}
+                    style={{
+                        animation: 'toastIn 250ms ease',
+                        backgroundColor: toast.type === 'success' ? '#16a34a' : '#dc2626',
+                        minWidth: '280px',
+                    }}
+                >
+                    {toast.type === 'success' ? <CheckCircle2 size={18} /> : <AlertCircle size={18} />}
+                    {toast.message}
+                    <button onClick={() => setToast(null)} className="ml-auto opacity-70 hover:opacity-100"><X size={14} /></button>
+                </div>
+            )}
+
+            {/* Fix #10: Styled cancel confirmation modal */}
+            {confirmModal && (
+                <div className="fixed inset-0 bg-zinc-950/60 z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden" style={{ animation: 'toastIn 200ms ease' }}>
+                        <div className="bg-red-600 px-6 py-4 flex items-center gap-3 text-white">
+                            <XCircle size={20} />
+                            <h3 className="font-bold text-base">Cancel Order #{confirmModal.displayId}?</h3>
+                        </div>
+                        <div className="p-6">
+                            <p className="text-sm text-zinc-600 mb-1">This will permanently delete this order and restore stock for all items.</p>
+                            <p className="text-xs text-zinc-400 font-medium">Customer: <span className="font-bold text-zinc-700">{confirmModal.customerName}</span></p>
+                            <p className="text-xs text-zinc-400 font-medium mt-0.5">{confirmModal.items?.length} item(s) · Total: {formatCurrency(confirmModal.totalPrice)}</p>
+                        </div>
+                        <div className="px-6 pb-6 flex gap-3">
+                            <button
+                                onClick={() => setConfirmModal(null)}
+                                className="flex-1 py-2.5 rounded-xl border border-stone-200 text-zinc-600 font-bold text-sm hover:bg-stone-50 transition-colors"
+                            >Keep Order</button>
+                            <button
+                                onClick={() => confirmCancel(confirmModal)}
+                                className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-sm transition-colors"
+                            >Yes, Cancel</button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* ROW 1 — Title + count + period */}
             <div className="flex items-baseline gap-3 mb-3 shrink-0">
@@ -621,7 +688,7 @@ const OrderHistory = () => {
                 {[
                     { key: STATUS_ALL, label: 'All', count: counts.all },
                     { key: STATUS_FULL, label: 'Completed', count: counts.full },
-                    { key: STATUS_PARTIAL, label: 'Partial', count: counts.partial },
+                    { key: STATUS_UNPAID, label: 'Unpaid/Partial', count: counts.partial_unpaid },
                 ].map(({ key, label, count }) => (
                     <button
                         key={key}
@@ -796,23 +863,26 @@ const OrderHistory = () => {
                             </tr>
                         ) : (
                             groupedOrders.map((group, rowIdx) => {
-                                const isPartial = group.status === 'PARTIAL';
-                                const remaining = isPartial && group.totalPrice && group.totalDownpayment
-                                    ? group.totalPrice - group.totalDownpayment
+                                const isUnfinished = group.status === 'PARTIAL' || group.status === 'UNPAID';
+                                // remaining is computed by taking totalPrice of ALL items in the order,
+                                // minus the downpayment (if any), and minus the price of fully paid items.
+                                const paidItemsValue = group.items.filter(i => i.status === 'FULL').reduce((sum, i) => sum + parseFloat(i.finalPrice || 0), 0);
+                                const remaining = isUnfinished 
+                                    ? group.totalPrice - group.totalDownpayment - paidItemsValue
                                     : null;
                                 const isExpanded = expanded.has(group.orderId);
 
                                 return (
                                     <React.Fragment key={group.orderId}>
                                         <tr
-                                            className={isPartial ? 'bg-amber-50/10' : ''}
+                                            className={isUnfinished ? 'bg-amber-50/10' : group.status === 'CANCELLED' ? 'bg-zinc-50/50 opacity-60' : ''}
                                             style={{
                                                 transition: 'background-color 150ms ease',
                                                 animation: 'fadeSlideIn 220ms ease both',
                                                 animationDelay: `${Math.min(rowIdx * 20, 250)}ms`,
                                             }}
                                             onMouseEnter={e => e.currentTarget.style.backgroundColor = '#fafaf9'}
-                                            onMouseLeave={e => e.currentTarget.style.backgroundColor = isPartial ? 'rgba(251,191,36,0.04)' : ''}
+                                            onMouseLeave={e => e.currentTarget.style.backgroundColor = isUnfinished ? 'rgba(251,191,36,0.04)' : ''}
                                         >
                                             {/* Expand toggle */}
                                             <td className="px-5 py-4">
@@ -871,9 +941,13 @@ const OrderHistory = () => {
                                                 </div>
                                             </td>
                                             <td className="px-5 py-4">
-                                                {isPartial ? (
+                                                {group.status === 'CANCELLED' ? (
+                                                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold bg-zinc-200 text-zinc-600">
+                                                        <XCircle size={11} /> Cancelled
+                                                    </span>
+                                                ) : isUnfinished ? (
                                                     <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-700">
-                                                        <Clock size={11} /> Partial
+                                                        <Clock size={11} /> {group.status === 'UNPAID' ? 'Pending' : 'Partial'}
                                                     </span>
                                                 ) : (
                                                     <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold bg-green-100 text-green-700">
@@ -882,11 +956,11 @@ const OrderHistory = () => {
                                                 )}
                                             </td>
                                             <td className="px-5 py-4 text-right font-mono text-zinc-600">
-                                                {isPartial ? formatCurrency(group.totalDownpayment) : '—'}
+                                                {group.totalDownpayment > 0 ? formatCurrency(group.totalDownpayment) : '—'}
                                             </td>
                                             <td className="px-5 py-4 text-right font-mono text-zinc-800">
                                                 <span className="font-black text-sm">{formatCurrency(group.totalPrice)}</span>
-                                                {isPartial && remaining > 0 && (
+                                                {isUnfinished && remaining > 0 && (
                                                     <span className="block text-xs text-amber-600 font-bold mt-1">
                                                         {formatCurrency(remaining)} due
                                                     </span>
@@ -897,10 +971,10 @@ const OrderHistory = () => {
                                             </td>
                                             <td className="px-5 py-4">
                                                 <div className="flex flex-col gap-1.5">
-                                                    {isPartial && (
+                                                    {isUnfinished && group.items.length === 1 && (
                                                         <button
-                                                            onClick={() => handleCompleteGroup(group)}
-                                                            disabled={completing === group.orderId}
+                                                            onClick={() => handleCompleteItem(group.items[0])}
+                                                            disabled={completing === group.items[0].id}
                                                             className="flex items-center gap-1.5 px-3 py-1.5 text-white text-xs font-bold rounded-lg disabled:opacity-50 shadow-sm"
                                                             style={{
                                                                 backgroundColor: '#16a34a',
@@ -909,11 +983,16 @@ const OrderHistory = () => {
                                                             onMouseEnter={e => e.currentTarget.style.backgroundColor = '#15803d'}
                                                             onMouseLeave={e => e.currentTarget.style.backgroundColor = '#16a34a'}
                                                         >
-                                                            {completing === group.orderId
+                                                            {completing === group.items[0].id
                                                                 ? <Loader2 size={12} className="animate-spin" />
                                                                 : <CheckCircle2 size={12} />}
-                                                            Complete
+                                                            Pay Bal.
                                                         </button>
+                                                    )}
+                                                    {isUnfinished && group.items.length > 1 && (
+                                                        <div className="text-[10px] font-bold text-zinc-400 bg-stone-100 border border-stone-200 px-2 py-1 rounded text-center">
+                                                            Expand to<br/>pay items
+                                                        </div>
                                                     )}
                                                     {group.status !== 'CANCELLED' && (
                                                         <button
@@ -950,7 +1029,9 @@ const OrderHistory = () => {
                                                         <div className="py-3 px-8 ml-8 border-l-2 border-blue-400 my-2">
                                                             <table className="w-full text-xs">
                                                                 <tbody>
-                                                                    {group.items.map((item, idx) => (
+                                                                    {group.items.map((item, idx) => {
+                                                                        const isItemUnfinished = item.status === 'PARTIAL' || item.status === 'UNPAID';
+                                                                        return (
                                                                         <tr
                                                                             key={idx}
                                                                             className="border-b border-stone-200/50 last:border-0"
@@ -964,9 +1045,29 @@ const OrderHistory = () => {
                                                                                     ? `${item.variant.product.brandName} ${item.variant.product.modelName} ${item.variant?.color ? `(${item.variant.color})` : ''}`
                                                                                     : '—'}
                                                                             </td>
-                                                                            <td className="py-2 text-right font-mono text-zinc-600">{formatCurrency(item.finalPrice)}</td>
+                                                                            <td className="py-2 font-mono text-xs text-center w-20">
+                                                                                {item.status === 'CANCELLED' ? (
+                                                                                    <span className="text-zinc-600 font-bold bg-zinc-200 px-1.5 py-0.5 rounded">CX</span>
+                                                                                ) : item.status === 'FULL' ? (
+                                                                                    <span className="text-green-600 font-bold bg-green-50 px-1.5 py-0.5 rounded">PAID</span>
+                                                                                ) : (
+                                                                                    <span className="text-amber-600 font-bold bg-amber-50 px-1.5 py-0.5 rounded">{item.status}</span>
+                                                                                )}
+                                                                            </td>
+                                                                            <td className="py-2 text-right font-mono text-zinc-600 w-24">{formatCurrency(item.finalPrice)}</td>
+                                                                            <td className="py-2 text-right w-20 pl-4">
+                                                                                {isItemUnfinished && (
+                                                                                    <button
+                                                                                        onClick={() => handleCompleteItem(item)}
+                                                                                        disabled={completing === item.id}
+                                                                                        className="w-full px-2 py-1 bg-green-600 hover:bg-green-700 disabled:bg-stone-300 text-white text-[10px] uppercase tracking-wider font-bold rounded shadow-sm transition-colors flex justify-center items-center"
+                                                                                    >
+                                                                                        {completing === item.id ? <Loader2 size={12} className="animate-spin" /> : 'Pay'}
+                                                                                    </button>
+                                                                                )}
+                                                                            </td>
                                                                         </tr>
-                                                                    ))}
+                                                                    )})}
                                                                 </tbody>
                                                             </table>
                                                         </div>

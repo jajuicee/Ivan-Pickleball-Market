@@ -8,8 +8,6 @@ import {
 const EMPTY_FORM = {
     customerName: '',
     paymentMethod: 'GCash',
-    orderStatus: 'FULL',
-    downpayment: '',
     orderNote: ''
 };
 
@@ -49,7 +47,7 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
         if (existing) {
             setCart(cart.map(c => c.variant.id === item.id ? { ...c, qty: c.qty + 1 } : c));
         } else {
-            setCart([...cart, { variant: item, qty: 1, finalPrice: item.sellingPrice }]);
+            setCart([...cart, { variant: item, qty: 1, finalPrice: item.sellingPrice, paymentStatus: 'PAID' }]);
         }
         setSearchQuery('');
         setStatus({ type: '', message: '' });
@@ -65,10 +63,8 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
 
     // ── Totals ────────────────────────────────────────────────────────────────
     const cartTotal = cart.reduce((sum, item) => sum + ((parseFloat(item.finalPrice) || 0) * (parseInt(item.qty) || 0)), 0);
-    const isPartial = formData.orderStatus === 'PARTIAL';
-    const remaining = isPartial && formData.downpayment
-        ? cartTotal - Number(formData.downpayment)
-        : null;
+    const amountPaid = cart.reduce((sum, item) => sum + (item.paymentStatus === 'PAID' ? ((parseFloat(item.finalPrice) || 0) * (parseInt(item.qty) || 0)) : 0), 0);
+    const amountUnpaid = cartTotal - amountPaid;
 
     // ── Reset ─────────────────────────────────────────────────────────────────
     const resetForm = () => {
@@ -81,6 +77,17 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
 
     // ── Confirm ───────────────────────────────────────────────────────────────
     const handleConfirm = () => {
+        // Fix #4: Validate all quantities against available stock before submitting
+        const oversold = cart.find(item => parseInt(item.qty) > item.variant.stockQuantity);
+        if (oversold) {
+            setShowSummary(false);
+            setStatus({
+                type: 'error',
+                message: `"${oversold.variant.displayName}" only has ${oversold.variant.stockQuantity} in stock but you ordered ${oversold.qty}. Please adjust the quantity.`
+            });
+            return;
+        }
+
         setSubmitting(true);
         // Generate a shared ID for this batch!
         const generatedTransactionId = 'TRX-' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).substring(2, 6).toUpperCase();
@@ -97,34 +104,35 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
                     customerName: formData.customerName,
                     paymentMethod: formData.paymentMethod,
                     paymentDetails: formData.orderNote,
-                    status: formData.orderStatus,
-                    downpayment: 0, // Default 0, overridden on first item below
+                    status: item.paymentStatus === 'PAID' ? 'FULL' : 'UNPAID',
+                    downpayment: 0, 
                     finalPrice: pricePerItem,
                 });
             }
         });
 
-        // Apply total downpayment to the FIRST payload so math works out
-        if (isPartial && payloads.length > 0) {
-            payloads[0].downpayment = parseFloat(formData.downpayment) || 0;
-        }
-
         const processOrder = async () => {
-            try {
-                for (const p of payloads) {
+            const failedItems = [];
+            for (const p of payloads) {
+                try {
                     await axios.post(`http://${window.location.hostname}:8080/api/transactions`, p);
+                } catch (err) {
+                    failedItems.push(err.response?.data?.error || 'Unknown error');
                 }
-                setShowSummary(false);
+            }
+
+            setShowSummary(false);
+            if (failedItems.length === 0) {
                 setStatus({ type: 'success', message: `Order ${generatedTransactionId} placed successfully!` });
                 resetForm();
                 if (refetchProducts) refetchProducts();
-            } catch (err) {
-                const msg = err.response?.data?.error || 'Error processing some items. Check inventory.';
-                setShowSummary(false);
-                setStatus({ type: 'error', message: msg });
-            } finally {
-                setSubmitting(false);
+            } else if (failedItems.length < payloads.length) {
+                setStatus({ type: 'error', message: `Order partially placed — ${payloads.length - failedItems.length} of ${payloads.length} items saved. ${failedItems[0]}` });
+                if (refetchProducts) refetchProducts();
+            } else {
+                setStatus({ type: 'error', message: failedItems[0] || 'Error processing order. Check inventory.' });
             }
+            setSubmitting(false);
         };
 
         processOrder();
@@ -222,10 +230,12 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
                                                 className="w-full px-2 py-1.5 text-sm border rounded focus:ring-2 focus:ring-zinc-950 font-bold" />
                                         </div>
                                         <div className="flex-1 sm:w-28">
-                                            <label className="block text-[10px] uppercase font-bold text-zinc-500 mb-1">Price (ea) ₱</label>
-                                            <input type="number" step="0.01" required value={item.finalPrice}
-                                                onChange={e => updateCartItem(item.variant.id, 'finalPrice', e.target.value)}
-                                                className="w-full px-2 py-1.5 text-sm border rounded focus:ring-2 focus:ring-zinc-950 font-bold text-emerald-700" />
+                                            <label className="block text-[10px] uppercase font-bold text-zinc-500 mb-1">Status</label>
+                                            <select value={item.paymentStatus} onChange={e => updateCartItem(item.variant.id, 'paymentStatus', e.target.value)}
+                                                className={`w-full px-2 py-1.5 text-sm border rounded outline-none font-bold ${item.paymentStatus === 'PAID' ? 'bg-green-50 text-green-700 border-green-200 focus:ring-green-500' : 'bg-amber-50 text-amber-700 border-amber-200 focus:ring-amber-500'}`}>
+                                                <option value="PAID">PAID</option>
+                                                <option value="UNPAID">UNPAID</option>
+                                            </select>
                                         </div>
                                         <button type="button" onClick={() => removeCartItem(item.variant.id)}
                                             className="text-zinc-400 hover:text-red-500 p-2 mt-4 transition-colors">
@@ -277,38 +287,24 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
                             />
                         </div>
 
-                        <div>
-                            <label className="block text-sm font-bold text-zinc-700 mb-2">Payment Status</label>
-                            <select value={formData.orderStatus}
-                                onChange={e => setFormData({ ...formData, orderStatus: e.target.value })}
-                                className="w-full px-4 py-2 border rounded-lg bg-white outline-none focus:ring-2 focus:ring-zinc-950">
-                                <option value="FULL">Full Payment</option>
-                                <option value="PARTIAL">Partial Payment</option>
-                            </select>
-                        </div>
-
-                        {isPartial && (
-                            <div className="p-4 bg-white border border-amber-300 rounded-lg shadow-sm">
-                                <label className="block text-sm font-bold text-amber-800 mb-2">Downpayment (₱)</label>
-                                <input type="number" step="0.01" required value={formData.downpayment}
-                                    onChange={e => setFormData({ ...formData, downpayment: e.target.value })}
-                                    className="w-full px-4 py-2 border border-amber-300 rounded-lg focus:ring-2 focus:ring-amber-400 outline-none font-bold"
-                                    placeholder="0.00" />
-                            </div>
-                        )}
-
                         <div className="mt-auto pt-6 border-t border-stone-200">
-                            <div className="flex justify-between items-end mb-6">
+                            <div className="flex justify-between items-end mb-2">
                                 <span className="font-bold text-zinc-500 uppercase tracking-wide text-sm">Order Total</span>
                                 <span className="text-3xl font-black text-zinc-900">{fmt(cartTotal)}</span>
                             </div>
                             
+                            {amountUnpaid > 0 && (
+                                <div className="flex justify-between items-center mb-6 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg">
+                                    <span className="text-xs font-bold text-amber-700 uppercase">Unpaid Balance</span>
+                                    <span className="text-sm font-black text-amber-800">{fmt(amountUnpaid)}</span>
+                                </div>
+                            )}
+
                             <button type="submit" disabled={
                                 cart.length === 0 || 
-                                !formData.customerName ||
-                                (isPartial && (!formData.downpayment || parseFloat(formData.downpayment) <= 0))
+                                !formData.customerName
                             }
-                                className="w-full bg-zinc-950 text-white px-8 py-4 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-zinc-800 disabled:bg-stone-300 disabled:cursor-not-allowed transition-all text-lg shadow-md">
+                                className="w-full bg-zinc-950 text-white px-8 py-4 mt-4 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-zinc-800 disabled:bg-stone-300 disabled:cursor-not-allowed transition-all text-lg shadow-md">
                                 <ClipboardList size={20} /> Review Order
                             </button>
                         </div>
@@ -353,7 +349,7 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
                                 </div>
                                 <div className="flex justify-between">
                                     <span className="text-zinc-500 font-medium">Payment Status</span>
-                                    <span className="font-bold text-zinc-900">{formData.orderStatus === 'FULL' ? 'Full Payment' : 'Partial Payment'}</span>
+                                    <span className="font-bold text-zinc-900">{amountUnpaid > 0 ? 'Mixed / Selected Partial' : 'All Paid'}</span>
                                 </div>
                             </div>
 
@@ -361,7 +357,10 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
                             <div className="space-y-3 mb-6">
                                 {cart.map((item, idx) => (
                                     <div key={idx} className="flex justify-between text-sm py-2 px-3 bg-stone-50 rounded border">
-                                        <div className="flex-[2] truncate pr-2 font-medium text-zinc-800">{item.qty}x {item.variant.brandName} {item.variant.modelName}</div>
+                                        <div className="flex-[2] truncate pr-2 font-medium text-zinc-800 flex items-center gap-2">
+                                            {item.qty}x {item.variant.brandName} {item.variant.modelName}
+                                            {item.paymentStatus === 'UNPAID' && <span className="bg-amber-100 text-amber-800 text-[10px] uppercase font-bold px-1.5 py-0.5 rounded">UNPAID</span>}
+                                        </div>
                                         <div className="font-mono text-zinc-500 text-xs mt-0.5 w-24 truncate">{item.variant.sku}</div>
                                         <div className="font-bold text-zinc-900 text-right w-24">{fmt(item.finalPrice * item.qty)}</div>
                                     </div>
@@ -371,17 +370,17 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
                             <div className="space-y-2 border-t pt-4 text-base">
                                 <div className="flex justify-between font-bold">
                                     <span className="text-zinc-800 text-lg">Order Total</span>
-                                    <span className="text-green-700 text-xl">{fmt(cartTotal)}</span>
+                                    <span className="text-zinc-900 text-xl">{fmt(cartTotal)}</span>
                                 </div>
-                                {isPartial && (
+                                {amountUnpaid > 0 && (
                                     <>
-                                        <div className="flex justify-between text-zinc-600">
-                                            <span>Downpayment</span>
-                                            <span>-{fmt(formData.downpayment)}</span>
+                                        <div className="flex justify-between text-emerald-700 font-bold">
+                                            <span>Paid Now</span>
+                                            <span>{fmt(amountPaid)}</span>
                                         </div>
                                         <div className="flex justify-between font-bold text-amber-600 border-t border-dashed border-stone-300 pt-2 mt-2">
-                                            <span>Remaining Balance</span>
-                                            <span>{fmt(remaining)}</span>
+                                            <span>Remaining Unpaid Balance</span>
+                                            <span>{fmt(amountUnpaid)}</span>
                                         </div>
                                     </>
                                 )}

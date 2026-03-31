@@ -33,6 +33,16 @@ public class IncomingStock {
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
 
+    // Supplier that is sending this shipment
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "supplier_id")
+    @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
+    private Supplier supplier;
+
+    // Whether this incoming batch is consigned (not purchased outright)
+    @Column(columnDefinition = "boolean default false")
+    private boolean consigned = false;
+
     // Default constructor for JPA
     public IncomingStock() {
     }
@@ -47,59 +57,30 @@ public class IncomingStock {
     }
 
     // Getters and Setters
-    public Long getId() {
-        return id;
-    }
+    public Long getId() { return id; }
+    public void setId(Long id) { this.id = id; }
 
-    public void setId(Long id) {
-        this.id = id;
-    }
+    public ProductVariant getVariant() { return variant; }
+    public void setVariant(ProductVariant variant) { this.variant = variant; }
 
-    public ProductVariant getVariant() {
-        return variant;
-    }
+    public Integer getQuantity() { return quantity; }
+    public void setQuantity(Integer quantity) { this.quantity = quantity; }
 
-    public void setVariant(ProductVariant variant) {
-        this.variant = variant;
-    }
+    public BigDecimal getExpectedPrice() { return expectedPrice; }
+    public void setExpectedPrice(BigDecimal expectedPrice) { this.expectedPrice = expectedPrice; }
 
-    public Integer getQuantity() {
-        return quantity;
-    }
+    public LocalDate getExpectedArrival() { return expectedArrival; }
+    public void setExpectedArrival(LocalDate expectedArrival) { this.expectedArrival = expectedArrival; }
 
-    public void setQuantity(Integer quantity) {
-        this.quantity = quantity;
-    }
+    public String getStatus() { return status; }
+    public void setStatus(String status) { this.status = status; }
 
-    public BigDecimal getExpectedPrice() {
-        return expectedPrice;
-    }
+    public LocalDateTime getCreatedAt() { return createdAt; }
+    public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
 
-    public void setExpectedPrice(BigDecimal expectedPrice) {
-        this.expectedPrice = expectedPrice;
-    }
+    public Supplier getSupplier() { return supplier; }
+    public void setSupplier(Supplier supplier) { this.supplier = supplier; }
 
-    public LocalDate getExpectedArrival() {
-        return expectedArrival;
-    }
-
-    public void setExpectedArrival(LocalDate expectedArrival) {
-        this.expectedArrival = expectedArrival;
-    }
-
-    public String getStatus() {
-        return status;
-    }
-
-    public void setStatus(String status) {
-        this.status = status;
-    }
-
-    public LocalDateTime getCreatedAt() {
-        return createdAt;
-    }
-
-    public void setCreatedAt(LocalDateTime createdAt) {
-        this.createdAt = createdAt;
-    }
+    public boolean isConsigned() { return consigned; }
+    public void setConsigned(boolean consigned) { this.consigned = consigned; }
 }

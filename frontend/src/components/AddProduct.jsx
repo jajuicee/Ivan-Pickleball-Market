@@ -1,19 +1,35 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Target, Box, X, Plus, Save, AlertCircle, CheckCircle } from 'lucide-react';
+import { Target, Box, X, Plus, Save, AlertCircle, CheckCircle, Building2 } from 'lucide-react';
+
+const BASE = `http://${window.location.hostname}:8080`;
 
 const AddProduct = ({ onProductAdded }) => {
     // Modal State
     const [activeModal, setActiveModal] = useState(null); // 'paddle' | 'misc' | null
     const [status, setStatus] = useState({ type: '', message: '' });
 
+    // Suppliers (fetched when paddle modal opens)
+    const [suppliers, setSuppliers] = useState([]);
+
     // --- PADDLE STATE ---
     const [paddleBase, setPaddleBase] = useState({ brandName: '', modelName: '' });
-    const emptyVariant = { sku: '', color: '', thicknessMm: '', shape: '', acquisitionPrice: '', sellingPrice: '', stockQuantity: '' };
+    const emptyVariant = {
+        sku: '', color: '', thicknessMm: '', shape: '',
+        acquisitionPrice: '', sellingPrice: '',
+        supplierId: '', consigned: false
+    };
     const [paddleVariants, setPaddleVariants] = useState([{ ...emptyVariant }]);
 
-    // --- MISC STATE --- (Added 'cost' for acquisition price, sku and stockQuantity)
-    const [miscData, setMiscData] = useState({ brandName: '', name: '', category: 'Accessories', cost: '', price: '', sku: '', stockQuantity: '' });
+    // --- MISC STATE ---
+    const [miscData, setMiscData] = useState({ brandName: '', name: '', category: 'Accessories', cost: '', price: '', sku: '' });
+
+    // Fetch suppliers when the paddle modal opens
+    useEffect(() => {
+        if (activeModal === 'paddle') {
+            axios.get(`${BASE}/api/suppliers`).then(r => setSuppliers(r.data)).catch(() => setSuppliers([]));
+        }
+    }, [activeModal]);
 
     // --- PADDLE HANDLERS ---
     const handleAddVariant = () => {
@@ -21,9 +37,9 @@ const AddProduct = ({ onProductAdded }) => {
     };
 
     const handleVariantChange = (index, field, value) => {
-        const updatedVariants = [...paddleVariants];
-        updatedVariants[index][field] = value;
-        setPaddleVariants(updatedVariants);
+        const updated = [...paddleVariants];
+        updated[index][field] = value;
+        setPaddleVariants(updated);
     };
 
     const submitPaddle = (e) => {
@@ -35,20 +51,25 @@ const AddProduct = ({ onProductAdded }) => {
             modelName: paddleBase.modelName,
             category: 'Paddles',
             variants: paddleVariants.map(v => ({
-                ...v,
+                sku: v.sku,
+                color: v.color,
                 thicknessMm: parseInt(v.thicknessMm) || 0,
+                shape: v.shape,
                 acquisitionPrice: parseFloat(v.acquisitionPrice) || 0,
                 sellingPrice: parseFloat(v.sellingPrice) || 0,
-                stockQuantity: parseInt(v.stockQuantity) || 0
+                stockQuantity: 0,
+                consigned: v.consigned,
+                // Supplier reference — JPA resolves by ID
+                defaultSupplier: v.supplierId ? { id: parseInt(v.supplierId) } : null
             }))
         };
 
-        axios.post(`http://${window.location.hostname}:8080/api/products`, newProduct)
+        axios.post(`${BASE}/api/products`, newProduct)
             .then(() => {
                 setStatus({ type: 'success', message: 'Paddle and variants saved successfully!' });
                 setPaddleBase({ brandName: '', modelName: '' });
                 setPaddleVariants([{ ...emptyVariant }]);
-                if (onProductAdded) onProductAdded(); // Refresh shared product list
+                if (onProductAdded) onProductAdded();
                 setTimeout(() => setActiveModal(null), 1500);
             })
             .catch(err => {
@@ -71,17 +92,17 @@ const AddProduct = ({ onProductAdded }) => {
                 color: 'N/A',
                 thicknessMm: 0,
                 shape: 'N/A',
-                acquisitionPrice: parseFloat(miscData.cost) || 0, // Now capturing cost price!
+                acquisitionPrice: parseFloat(miscData.cost) || 0,
                 sellingPrice: parseFloat(miscData.price) || 0,
-                stockQuantity: parseInt(miscData.stockQuantity) || 0
+                stockQuantity: 0
             }]
         };
 
-        axios.post(`http://${window.location.hostname}:8080/api/products`, newMiscProduct)
+        axios.post(`${BASE}/api/products`, newMiscProduct)
             .then(() => {
                 setStatus({ type: 'success', message: 'Item added successfully!' });
-                setMiscData({ brandName: '', name: '', category: 'Accessories', cost: '', price: '', sku: '', stockQuantity: '' });
-                if (onProductAdded) onProductAdded(); // Refresh shared product list
+                setMiscData({ brandName: '', name: '', category: 'Accessories', cost: '', price: '', sku: '' });
+                if (onProductAdded) onProductAdded();
                 setTimeout(() => setActiveModal(null), 1500);
             })
             .catch(err => {
@@ -184,17 +205,50 @@ const AddProduct = ({ onProductAdded }) => {
                                                         </select>
                                                     </div>
                                                     <div>
-                                                        <label className="block text-xs font-bold text-zinc-500 uppercase">Cost ($)</label>
+                                                        <label className="block text-xs font-bold text-zinc-500 uppercase">Cost (₱)</label>
                                                         <input type="number" step="0.01" required value={variant.acquisitionPrice} onChange={e => handleVariantChange(index, 'acquisitionPrice', e.target.value)} className="w-full px-3 py-1.5 text-sm border rounded mt-1" />
                                                     </div>
                                                     <div>
-                                                        <label className="block text-xs font-bold text-zinc-500 uppercase">Price ($)</label>
+                                                        <label className="block text-xs font-bold text-zinc-500 uppercase">Price (₱)</label>
                                                         <input type="number" step="0.01" required value={variant.sellingPrice} onChange={e => handleVariantChange(index, 'sellingPrice', e.target.value)} className="w-full px-3 py-1.5 text-sm border rounded mt-1" />
                                                     </div>
+
+                                                    {/* NEW: Supplier dropdown */}
                                                     <div>
-                                                        <label className="block text-xs font-bold text-zinc-500 uppercase">Stock</label>
-                                                        <input type="number" required value={variant.stockQuantity} onChange={e => handleVariantChange(index, 'stockQuantity', e.target.value)} className="w-full px-3 py-1.5 text-sm border rounded mt-1" />
+                                                        <label className="block text-xs font-bold text-zinc-500 uppercase flex items-center gap-1"><Building2 size={10} /> Supplier</label>
+                                                        <select
+                                                            value={variant.supplierId}
+                                                            onChange={e => handleVariantChange(index, 'supplierId', e.target.value)}
+                                                            className="w-full px-3 py-1.5 text-sm border rounded mt-1 bg-white"
+                                                        >
+                                                            <option value="">— None —</option>
+                                                            {suppliers.map(s => (
+                                                                <option key={s.id} value={s.id}>{s.name}</option>
+                                                            ))}
+                                                        </select>
                                                     </div>
+
+                                                    {/* NEW: Consigned toggle */}
+                                                    <div className="flex flex-col justify-end">
+                                                        <label className="block text-xs font-bold text-zinc-500 uppercase mb-1">Ownership</label>
+                                                        <div className="flex gap-1 mt-1">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleVariantChange(index, 'consigned', false)}
+                                                                className={`flex-1 py-1.5 text-xs font-bold rounded border-2 transition-all ${!variant.consigned ? 'border-green-500 bg-green-50 text-green-700' : 'border-stone-200 text-zinc-400'}`}
+                                                            >
+                                                                Owned
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleVariantChange(index, 'consigned', true)}
+                                                                className={`flex-1 py-1.5 text-xs font-bold rounded border-2 transition-all ${variant.consigned ? 'border-amber-500 bg-amber-50 text-amber-700' : 'border-stone-200 text-zinc-400'}`}
+                                                            >
+                                                                Consigned
+                                                            </button>
+                                                        </div>
+                                                    </div>
+
                                                     {paddleVariants.length > 1 && (
                                                         <div className="flex items-end">
                                                             <button type="button" onClick={() => setPaddleVariants(paddleVariants.filter((_, i) => i !== index))} className="text-red-500 text-sm font-bold hover:underline mb-2">Remove</button>
@@ -245,7 +299,7 @@ const AddProduct = ({ onProductAdded }) => {
                                         <input type="text" required value={miscData.brandName} onChange={e => setMiscData({ ...miscData, brandName: e.target.value })} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-zinc-900 outline-none" placeholder="e.g., Tourna" />
                                     </div>
                                 </div>
-                                
+
                                 <div className="grid grid-cols-2 gap-4">
                                     <div>
                                         <label className="block text-sm font-bold text-zinc-700 mb-1">Category</label>
@@ -262,8 +316,7 @@ const AddProduct = ({ onProductAdded }) => {
                                     </div>
                                 </div>
 
-                                {/* NEW PRICING GRID */}
-                                <div className="grid grid-cols-3 gap-4">
+                                <div className="grid grid-cols-2 gap-4">
                                     <div>
                                         <label className="block text-sm font-bold text-zinc-700 mb-1">Cost Price</label>
                                         <input type="number" step="0.01" required value={miscData.cost} onChange={e => setMiscData({ ...miscData, cost: e.target.value })} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-zinc-900 outline-none" placeholder="5.00" />
@@ -272,12 +325,7 @@ const AddProduct = ({ onProductAdded }) => {
                                         <label className="block text-sm font-bold text-zinc-700 mb-1">Selling Price</label>
                                         <input type="number" step="0.01" required value={miscData.price} onChange={e => setMiscData({ ...miscData, price: e.target.value })} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-zinc-900 outline-none" placeholder="9.99" />
                                     </div>
-                                    <div>
-                                        <label className="block text-sm font-bold text-zinc-700 mb-1">Initial Stock</label>
-                                        <input type="number" required min="0" value={miscData.stockQuantity} onChange={e => setMiscData({ ...miscData, stockQuantity: e.target.value })} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-zinc-900 outline-none" placeholder="Qty" />
-                                    </div>
                                 </div>
-
                             </form>
                         </div>
 

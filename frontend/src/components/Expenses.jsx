@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import axios from 'axios';
 import {
     Receipt, Plus, Trash2, Calendar, X, ChevronLeft, ChevronRight,
-    AlertCircle, RefreshCw, Search, ChevronDown, DollarSign
+    AlertCircle, RefreshCw, Search, ChevronDown, DollarSign, TrendingUp, TrendingDown, Wallet
 } from 'lucide-react';
 
 const CATEGORIES = ['Miscellaneous', 'Bills', 'Supplies', 'Salary'];
@@ -234,6 +234,7 @@ const AddExpenseModal = ({ onSave, onClose }) => {
 // ── Main Component ────────────────────────────────────────────────────────────
 const Expenses = () => {
     const [expenses, setExpenses]   = useState([]);
+    const [transactions, setTransactions] = useState([]);
     const [loading, setLoading]     = useState(true);
     const [error,   setError]       = useState('');
     const [catFilter, setCatFilter] = useState('All');
@@ -252,15 +253,20 @@ const Expenses = () => {
         return () => document.removeEventListener('mousedown', handler);
     }, []);
 
-    const fetchExpenses = () => {
+    const fetchData = () => {
         setLoading(true); setError('');
-        axios.get(`http://${window.location.hostname}:8080/api/expenses`)
-            .then(res => setExpenses(Array.isArray(res.data) ? res.data : []))
-            .catch(() => setError('Could not load expenses. Is the backend running?'))
-            .finally(() => setLoading(false));
+        Promise.all([
+            axios.get(`http://${window.location.hostname}:8080/api/expenses`),
+            axios.get(`http://${window.location.hostname}:8080/api/transactions`)
+        ]).then(([resExp, resTx]) => {
+            setExpenses(Array.isArray(resExp.data) ? resExp.data : []);
+            setTransactions(Array.isArray(resTx.data) ? resTx.data : []);
+        }).catch(() => {
+            setError('Could not load data. Is the backend running?');
+        }).finally(() => setLoading(false));
     };
 
-    useEffect(() => { fetchExpenses(); }, []);
+    useEffect(() => { fetchData(); }, []);
 
     const handleAdd = async (data) => {
         const res = await axios.post(`http://${window.location.hostname}:8080/api/expenses`, data);
@@ -315,6 +321,19 @@ const Expenses = () => {
         });
         return { total, byCategory };
     }, [filtered]);
+
+    const txTotals = useMemo(() => {
+        let income = 0;
+        transactions.forEach(t => {
+            const d = new Date(t.transactionDate);
+            if (!dateWindow || (d >= dateWindow.start && d <= dateWindow.end)) {
+                income += Number(t.finalPrice || 0);
+            }
+        });
+        return { income };
+    }, [transactions, dateWindow]);
+
+    const currentMoney = txTotals.income - totals.total;
 
     const periodLabel = customRange ? customRange.label
         : activePreset === 'TODAY' ? "Today" : activePreset === '1W' ? 'This Week'
@@ -410,7 +429,7 @@ const Expenses = () => {
                 </div>
 
                 {/* Refresh */}
-                <button onClick={fetchExpenses} disabled={loading} className="p-2 rounded-lg border border-stone-300 bg-white text-zinc-500 disabled:opacity-40 shadow-sm hover:bg-stone-50">
+                <button onClick={fetchData} disabled={loading} className="p-2 rounded-lg border border-stone-300 bg-white text-zinc-500 disabled:opacity-40 shadow-sm hover:bg-stone-50">
                     <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
                 </button>
 
@@ -431,25 +450,35 @@ const Expenses = () => {
             )}
 
             {/* ── Summary Cards ── */}
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4 shrink-0">
-                <div className="bg-white border border-stone-200 rounded-xl shadow-sm p-4 flex items-center gap-3 col-span-2 md:col-span-1">
-                    <div className="p-2.5 bg-red-50 rounded-xl"><DollarSign size={18} className="text-red-600" /></div>
-                    <div>
-                        <p className="text-xs font-bold text-zinc-500 mb-0.5">Total</p>
-                        <p className="text-lg font-black text-zinc-900 tracking-tight">{formatCurrency(totals.total)}</p>
+            <div className="grid grid-cols-2 lg:grid-cols-8 gap-3 mb-4 shrink-0">
+                {/* Cash Flow Main Cards */}
+                <div className="col-span-2 lg:col-span-2 grid grid-cols-2 gap-3">
+                    <div className="bg-emerald-50 border border-emerald-200 rounded-xl shadow-sm p-4 flex flex-col justify-center">
+                        <p className="text-[10px] font-black text-emerald-800 uppercase tracking-wider mb-1 flex items-center gap-1.5"><TrendingUp size={14}/> Income</p>
+                        <p className="text-xl font-black text-emerald-700 tracking-tight">{formatCurrency(txTotals.income)}</p>
+                    </div>
+                    <div className="bg-red-50 border border-red-200 rounded-xl shadow-sm p-4 flex flex-col justify-center">
+                        <p className="text-[10px] font-black text-red-800 uppercase tracking-wider mb-1 flex items-center gap-1.5"><TrendingDown size={14}/> Expenses</p>
+                        <p className="text-xl font-black text-red-700 tracking-tight">{formatCurrency(totals.total)}</p>
                     </div>
                 </div>
+
+                <div className="col-span-2 lg:col-span-2 bg-zinc-950 border border-zinc-900 rounded-xl shadow-md p-4 flex flex-col justify-center relative overflow-hidden">
+                    <div className="absolute -right-4 -bottom-4 opacity-10"><Wallet size={100} /></div>
+                    <p className="text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1 flex items-center gap-1.5 relative z-10"><DollarSign size={14}/> Current Money</p>
+                    <p className="text-3xl font-black text-white tracking-tight relative z-10">{formatCurrency(currentMoney)}</p>
+                </div>
+
+                {/* Categories Breakdown */}
                 {CATEGORIES.map(cat => {
                     const c = CATEGORY_COLORS[cat];
                     return (
-                        <div key={cat} className="bg-white border border-stone-200 rounded-xl shadow-sm p-4 flex items-center gap-3">
-                            <div className="p-2.5 rounded-xl" style={{ backgroundColor: c.bg }}>
-                                <span className="block w-3 h-3 rounded-full" style={{ backgroundColor: c.dot }} />
+                        <div key={cat} className="col-span-1 lg:col-span-1 bg-white border border-stone-200 rounded-xl shadow-sm p-3 flex flex-col">
+                            <div className="flex items-center gap-1.5 mb-2">
+                                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: c.dot }} />
+                                <p className="text-[10px] font-black text-zinc-500 uppercase truncate">{cat}</p>
                             </div>
-                            <div>
-                                <p className="text-xs font-bold text-zinc-500 mb-0.5">{cat}</p>
-                                <p className="text-sm font-black text-zinc-900 tracking-tight">{formatCurrency(totals.byCategory[cat])}</p>
-                            </div>
+                            <p className="text-sm font-black text-zinc-800 tracking-tight mt-auto">{formatCurrency(totals.byCategory[cat])}</p>
                         </div>
                     );
                 })}
