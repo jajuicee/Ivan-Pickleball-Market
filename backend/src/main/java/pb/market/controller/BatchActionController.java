@@ -70,7 +70,8 @@ public class BatchActionController {
             StockBatch batch = new StockBatch();
             batch.setVariant(variant);
             batch.setQuantity(item.getQuantity());
-            batch.setRemainingQuantity(0); // Handled by prePersist, but logically 0 if INCOMING? Actually prePersist sets it to quantity.
+            // Fix: remainingQuantity should match quantity if RECEIVED, else 0 if INCOMING
+            batch.setRemainingQuantity("RECEIVED".equals(status) ? item.getQuantity() : 0); 
             batch.setAcquisitionPrice(itemBaseCost);
             batch.setSupplier(supplier);
             batch.setConsigned(request.isConsigned());
@@ -126,6 +127,7 @@ public class BatchActionController {
     }
 
     @GetMapping("/history")
+    @Transactional(readOnly = true)
     public ResponseEntity<?> getBatchHistory() {
         List<StockBatch> batches = stockBatchRepository.findAll();
         Map<String, List<StockBatch>> grouped = batches.stream()
@@ -146,28 +148,34 @@ public class BatchActionController {
             BigDecimal totalExpense = exp != null ? exp.getCost() : BigDecimal.ZERO;
             
             // Collect item details
-            List<Map<String, Object>> itemDtos = items.stream().map(item -> Map.<String, Object>of(
-                "variantId", item.getVariant().getId(),
-                "sku", item.getVariant().getSku(),
-                "name", item.getVariant().getProduct().getBrandName() + " " + item.getVariant().getProduct().getModelName() + " (" + item.getVariant().getColor() + ")",
-                "quantity", item.getQuantity(),
-                "baseCost", item.getAcquisitionPrice()
-            )).collect(Collectors.toList());
+            List<Map<String, Object>> itemDtos = items.stream().map(item -> {
+                Map<String, Object> i = new java.util.HashMap<>();
+                i.put("variantId", item.getVariant().getId());
+                i.put("sku", item.getVariant().getSku());
+                i.put("name", item.getVariant().getProduct().getBrandName() + " " + item.getVariant().getProduct().getModelName() + " (" + item.getVariant().getColor() + ")");
+                i.put("quantity", item.getQuantity());
+                i.put("baseCost", item.getAcquisitionPrice());
+                return i;
+            }).collect(Collectors.toList());
 
             int totalQty = items.stream().mapToInt(StockBatch::getQuantity).sum();
 
-            return Map.<String, Object>of(
-                "batchId", batchId,
-                "date", first.getRestockedAt(),
-                "eta", first.getEta(),
-                "supplier", first.getSupplier() != null ? first.getSupplier().getName() : "Unknown",
-                "status", first.getStatus() != null ? first.getStatus() : "RECEIVED",
-                "totalQuantity", totalQty,
-                "totalExpense", totalExpense,
-                "items", itemDtos
-            );
+            Map<String, Object> batchMap = new java.util.HashMap<>();
+            batchMap.put("batchId", batchId);
+            batchMap.put("date", first.getRestockedAt() != null ? first.getRestockedAt() : java.time.LocalDateTime.MIN);
+            batchMap.put("eta", first.getEta());
+            batchMap.put("supplier", first.getSupplier() != null ? first.getSupplier().getName() : "Unknown");
+            batchMap.put("status", first.getStatus() != null ? first.getStatus() : "RECEIVED");
+            batchMap.put("totalQuantity", totalQty);
+            batchMap.put("totalExpense", totalExpense);
+            batchMap.put("items", itemDtos);
+            return batchMap;
         })
-        .sorted((a, b) -> ((java.time.LocalDateTime) b.get("date")).compareTo((java.time.LocalDateTime) a.get("date")))
+        .sorted((a, b) -> {
+            java.time.LocalDateTime dateA = (java.time.LocalDateTime) a.get("date");
+            java.time.LocalDateTime dateB = (java.time.LocalDateTime) b.get("date");
+            return dateB.compareTo(dateA);
+        })
         .collect(Collectors.toList());
 
         return ResponseEntity.ok(result);

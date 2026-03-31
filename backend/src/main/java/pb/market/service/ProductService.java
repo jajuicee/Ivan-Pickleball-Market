@@ -17,6 +17,7 @@ import java.math.BigDecimal;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
@@ -101,6 +102,7 @@ public class ProductService {
         batch.setAcquisitionPrice(acquisitionPrice);
         batch.setSupplier(supplier);
         batch.setConsigned(consigned);
+        batch.setBatchId(UUID.randomUUID().toString()); // Fix: Add batchId so it shows in Supply History
         stockBatchRepository.save(batch);
 
         return variantRepository.save(variant);
