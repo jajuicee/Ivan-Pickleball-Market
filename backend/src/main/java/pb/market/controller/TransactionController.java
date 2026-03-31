@@ -37,8 +37,6 @@ public class TransactionController {
         }
 
         // Deduct stock first
-        variant.setStockQuantity(variant.getStockQuantity() - 1);
-        variantRepository.save(variant);
 
         // Find oldest stock batch for FIFO (ONLY RECEIVED!)
         List<StockBatch> batches = stockBatchRepository.findByVariantIdAndStatusAndRemainingQuantityGreaterThanOrderByConsignedAscRestockedAtAsc(variantId, "RECEIVED", 0);
@@ -136,9 +134,6 @@ public class TransactionController {
         for (Transaction tx : group) {
             // 1. Restore the variant's summary stock count (each tx = 1 unit sold)
             ProductVariant variant = tx.getVariant();
-            int currentQty = variant.getStockQuantity() != null ? variant.getStockQuantity() : 0;
-            variant.setStockQuantity(currentQty + 1);
-            variantRepository.save(variant);
 
             // 2. Restore the FIFO batch — add 1 unit back to the most recently consumed RECEIVED batch
             List<StockBatch> batches = stockBatchRepository

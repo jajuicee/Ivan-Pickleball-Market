@@ -87,7 +87,6 @@ public class ProductService {
         ProductVariant variant = variantRepository.findById(variantId)
                 .orElseThrow(() -> new RuntimeException("Variant not found with id: " + variantId));
 
-        variant.setStockQuantity(variant.getStockQuantity() + quantity);
 
         // Resolve the supplier if provided
         Supplier supplier = null;
@@ -118,7 +117,6 @@ public class ProductService {
             throw new IllegalArgumentException("Cannot deduct more than current stock (" + current + ").");
         }
         
-        variant.setStockQuantity(current - quantity);
 
         int remainingToDeduct = quantity;
         List<StockBatch> batches = stockBatchRepository
