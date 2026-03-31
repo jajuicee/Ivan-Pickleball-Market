@@ -23,6 +23,10 @@ public class Expense {
 
     private LocalDateTime expenseDate;
 
+    // Used to group expenses with specific stock batches for the "revert" feature
+    @Column(name = "batch_id", length = 36)
+    private String batchId;
+
     @PrePersist
     protected void onCreate() {
         if (this.expenseDate == null) {

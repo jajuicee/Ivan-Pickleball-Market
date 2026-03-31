@@ -41,10 +41,12 @@ public class ProductController {
 
     @PatchMapping("/variants/{id}/add-stock")
     public ResponseEntity<Map<String, Object>> addStock(
-            @PathVariable Long id, 
-            @RequestParam int quantity, 
-            @RequestParam(required = false) BigDecimal acquisitionPrice) {
-        ProductVariant updated = productService.addStock(id, quantity, acquisitionPrice);
+            @PathVariable Long id,
+            @RequestParam int quantity,
+            @RequestParam(required = false) BigDecimal acquisitionPrice,
+            @RequestParam(required = false) Long supplierId,
+            @RequestParam(required = false, defaultValue = "false") boolean consigned) {
+        ProductVariant updated = productService.addStock(id, quantity, acquisitionPrice, supplierId, consigned);
         return ResponseEntity.ok(Map.of(
             "id", updated.getId(),
             "sku", updated.getSku(),
@@ -54,24 +56,20 @@ public class ProductController {
     }
 
     @PatchMapping("/variants/{id}/deduct-stock")
-    @Transactional
     public ResponseEntity<Map<String, Object>> deductStock(
             @PathVariable Long id,
             @RequestParam int quantity) {
-        ProductVariant variant = variantRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Variant not found"));
-        int current = variant.getStockQuantity() != null ? variant.getStockQuantity() : 0;
-        if (quantity > current) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Cannot deduct more than current stock (" + current + ")."));
-        }
-        variant.setStockQuantity(current - quantity);
-        variantRepository.save(variant);
-        return ResponseEntity.ok(Map.of(
+        try {
+            ProductVariant variant = productService.deductStock(id, quantity);
+            return ResponseEntity.ok(Map.of(
             "id", variant.getId(),
             "sku", variant.getSku(),
             "stockQuantity", variant.getStockQuantity(),
             "message", "Stock deducted successfully"
         ));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)
