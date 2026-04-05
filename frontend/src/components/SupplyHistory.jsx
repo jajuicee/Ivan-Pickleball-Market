@@ -167,14 +167,32 @@ const SupplyHistory = () => {
                                                         <h4 className="font-bold text-indigo-900 flex items-center gap-2">
                                                             <PackageSearch size={16} /> Batch Items Breakdown
                                                         </h4>
-                                                        {row.status === 'INCOMING' && (
+                                                        <div className="flex gap-2">
+                                                            {row.status === 'INCOMING' && (
+                                                                <button 
+                                                                    onClick={(e) => { e.stopPropagation(); handleMarkReceived(row.batchId); }}
+                                                                    className="px-4 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-lg shadow-sm transition-colors flex items-center gap-2"
+                                                                >
+                                                                    <CheckCircle size={14} /> Mark Batch as Received
+                                                                </button>
+                                                            )}
                                                             <button 
-                                                                onClick={(e) => { e.stopPropagation(); handleMarkReceived(row.batchId); }}
-                                                                className="px-4 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-lg shadow-sm transition-colors flex items-center gap-2"
+                                                                onClick={async (e) => { 
+                                                                    e.stopPropagation(); 
+                                                                    if (!confirm('Are you sure you want to revert this batch? This will deduct the stocks and delete associated expenses.')) return;
+                                                                    try {
+                                                                        await axios.delete(`${BASE}/api/batch-actions/revert/${row.batchId}`);
+                                                                        setBatches(batches.filter(b => b.batchId !== row.batchId));
+                                                                        setExpandedBatchId(null);
+                                                                    } catch (err) {
+                                                                        alert('Failed to revert batch.');
+                                                                    }
+                                                                }}
+                                                                className="px-4 py-1.5 bg-red-100 hover:bg-red-200 text-red-700 text-xs font-bold rounded-lg shadow-sm transition-colors flex items-center gap-2"
                                                             >
-                                                                <CheckCircle size={14} /> Mark Batch as Received
+                                                                <Truck size={14} /> Revert / Delete Batch
                                                             </button>
-                                                        )}
+                                                        </div>
                                                     </div>
                                                     <table className="w-full text-left text-sm border-collapse">
                                                         <thead className="bg-stone-100/50 text-[10px] uppercase text-zinc-500 font-bold">

@@ -124,23 +124,26 @@ public class BatchActionController {
     @GetMapping("/history")
     @Transactional(readOnly = true)
     public ResponseEntity<?> getBatchHistory() {
-        List<StockBatch> batches = stockBatchRepository.findAll();
+        // Single JOIN FETCH query — no N+1 lazy loading
+        List<StockBatch> batches = stockBatchRepository.findAllWithVariantAndProduct();
         Map<String, List<StockBatch>> grouped = batches.stream()
-                .filter(b -> b.getBatchId() != null)
                 .collect(Collectors.groupingBy(StockBatch::getBatchId));
 
         List<Expense> expenses = expenseRepository.findAll();
-        Map<String, Expense> expenseMap = expenses.stream()
+        Map<String, BigDecimal> expenseMap = expenses.stream()
                 .filter(e -> e.getBatchId() != null)
-                .collect(Collectors.toMap(Expense::getBatchId, e -> e, (e1, e2) -> e1));
+                .collect(Collectors.groupingBy(Expense::getBatchId,
+                        Collectors.mapping(
+                            e -> e.getCost() != null ? e.getCost() : BigDecimal.ZERO,
+                            Collectors.reducing(BigDecimal.ZERO, BigDecimal::add)
+                        )));
 
         List<Map<String, Object>> result = grouped.entrySet().stream().map(entry -> {
             String batchId = entry.getKey();
             List<StockBatch> items = entry.getValue();
             StockBatch first = items.get(0);
             
-            Expense exp = expenseMap.get(batchId);
-            BigDecimal totalExpense = exp != null ? exp.getCost() : BigDecimal.ZERO;
+            BigDecimal totalExpense = expenseMap.getOrDefault(batchId, BigDecimal.ZERO);
             
             // Collect item details
             List<Map<String, Object>> itemDtos = items.stream().map(item -> {

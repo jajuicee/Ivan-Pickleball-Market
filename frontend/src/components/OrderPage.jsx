@@ -32,14 +32,15 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
     [products]);
 
     const filteredResults = useMemo(() => {
-        if (!searchQuery) return [];
+        if (!searchQuery.trim()) return [];
+        const q = searchQuery.toLowerCase();
         return inventoryList
             .filter(i =>
-                i.displayName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                i.sku.toLowerCase().includes(searchQuery.toLowerCase())
+                (i.displayName || '').toLowerCase().includes(q) ||
+                (i.sku || '').toLowerCase().includes(q)
             )
             .filter(i => i.stockQuantity > 0) // Only allow searching for in-stock items
-            .slice(0, 5);
+            .slice(0, 15);
     }, [searchQuery, inventoryList]);
 
     const handleAddToCart = (item) => {

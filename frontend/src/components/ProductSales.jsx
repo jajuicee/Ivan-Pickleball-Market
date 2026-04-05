@@ -46,8 +46,8 @@ const ProductSales = ({ products = [] }) => {
             .filter(item => categoryFilter === 'All' || item.category === categoryFilter)
             .filter(item => 
                 searchQuery === '' || 
-                item.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                item.sku.toLowerCase().includes(searchQuery.toLowerCase())
+                (item.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
+                (item.sku || '').toLowerCase().includes(searchQuery.toLowerCase())
             )
             .sort((a, b) => b.totalSold - a.totalSold);
     }, [products, categoryFilter, searchQuery]);

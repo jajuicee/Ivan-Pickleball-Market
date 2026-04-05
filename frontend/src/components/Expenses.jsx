@@ -134,8 +134,8 @@ const CalendarPicker = ({ onApply, onClose, visible }) => {
 };
 
 // ── Add Expense Modal ─────────────────────────────────────────────────────────
-const AddExpenseModal = ({ onSave, onClose }) => {
-    const [form, setForm] = useState({ name: '', category: 'Miscellaneous', cost: '', note: '' });
+const AddExpenseModal = ({ onSave, onClose, batches = [] }) => {
+    const [form, setForm] = useState({ name: '', category: 'Miscellaneous', cost: '', note: '', batchId: '' });
     const [saving, setSaving] = useState(false);
     const [err, setErr] = useState('');
 
@@ -146,7 +146,9 @@ const AddExpenseModal = ({ onSave, onClose }) => {
         if (!form.cost || isNaN(Number(form.cost)) || Number(form.cost) <= 0) return setErr('Enter a valid cost.');
         setSaving(true); setErr('');
         try {
-            await onSave({ ...form, cost: Number(form.cost) });
+            const dataToSave = { ...form, cost: Number(form.cost) };
+            if (!dataToSave.batchId) dataToSave.batchId = null;
+            await onSave(dataToSave);
             onClose();
         } catch {
             setErr('Failed to save expense. Please try again.');
@@ -195,6 +197,25 @@ const AddExpenseModal = ({ onSave, onClose }) => {
                         </div>
                     </div>
 
+                    {/* Batch Link */}
+                    <div>
+                        <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1.5">Link to Supply Batch <span className="font-normal normal-case text-zinc-400">(optional)</span></label>
+                        <div className="relative">
+                            <select
+                                value={form.batchId} onChange={e => set('batchId', e.target.value)}
+                                className="w-full appearance-none px-3 py-2.5 text-sm border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-300 text-zinc-800 bg-white pr-9"
+                            >
+                                <option value="">None (Standalone Expense)</option>
+                                {batches.map(b => (
+                                    <option key={b.batchId} value={b.batchId}>
+                                        {new Date(b.date).toLocaleDateString()} - {b.supplier} ({b.totalQuantity} items) - ₱{b.totalExpense?.toLocaleString()}
+                                    </option>
+                                ))}
+                            </select>
+                            <ChevronDown size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />
+                        </div>
+                    </div>
+
                     {/* Cost */}
                     <div>
                         <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1.5">Cost (₱) *</label>
@@ -235,6 +256,7 @@ const AddExpenseModal = ({ onSave, onClose }) => {
 const Expenses = () => {
     const [expenses, setExpenses]   = useState([]);
     const [transactions, setTransactions] = useState([]);
+    const [batches, setBatches]     = useState([]);
     const [loading, setLoading]     = useState(true);
     const [error,   setError]       = useState('');
     const [catFilter, setCatFilter] = useState('All');
@@ -257,10 +279,12 @@ const Expenses = () => {
         setLoading(true); setError('');
         Promise.all([
             axios.get(`http://${window.location.hostname}:8080/api/expenses`),
-            axios.get(`http://${window.location.hostname}:8080/api/transactions`)
-        ]).then(([resExp, resTx]) => {
+            axios.get(`http://${window.location.hostname}:8080/api/transactions`),
+            axios.get(`http://${window.location.hostname}:8080/api/batch-actions/history`)
+        ]).then(([resExp, resTx, resBatches]) => {
             setExpenses(Array.isArray(resExp.data) ? resExp.data : []);
             setTransactions(Array.isArray(resTx.data) ? resTx.data : []);
+            setBatches(Array.isArray(resBatches.data) ? resBatches.data : []);
         }).catch(() => {
             setError('Could not load data. Is the backend running?');
         }).finally(() => setLoading(false));
@@ -273,12 +297,24 @@ const Expenses = () => {
         setExpenses(prev => [res.data, ...prev]);
     };
 
-    const handleDelete = async (id) => {
-        if (!window.confirm('Delete this expense?')) return;
-        setDeleting(id);
+    const handleDelete = async (exp) => {
+        const hasBatch = !!exp.batchId;
+        const msg = hasBatch
+            ? 'This expense is linked to a supply batch.\nDeleting it will also revert the batch and remove its stock entries.\n\nContinue?'
+            : 'Delete this expense?';
+        if (!window.confirm(msg)) return;
+        setDeleting(exp.id);
         try {
-            await axios.delete(`http://${window.location.hostname}:8080/api/expenses/${id}`);
-            setExpenses(prev => prev.filter(e => e.id !== id));
+            if (hasBatch) {
+                // Revert the full batch (this deletes the expense + stock batches)
+                await axios.delete(`http://${window.location.hostname}:8080/api/batch-actions/revert/${exp.batchId}`);
+                // Remove all expenses that share this batchId
+                setExpenses(prev => prev.filter(e => e.batchId !== exp.batchId));
+                setBatches(prev => prev.filter(b => b.batchId !== exp.batchId));
+            } else {
+                await axios.delete(`http://${window.location.hostname}:8080/api/expenses/${exp.id}`);
+                setExpenses(prev => prev.filter(e => e.id !== exp.id));
+            }
         } catch {
             setError('Failed to delete expense.');
         } finally {
@@ -306,7 +342,7 @@ const Expenses = () => {
             const d = new Date(e.expenseDate);
             const inDate = !dateWindow || (d >= dateWindow.start && d <= dateWindow.end);
             const inCat  = catFilter === 'All' || e.category === catFilter;
-            const inQ    = !q || e.name?.toLowerCase().includes(q) || e.note?.toLowerCase().includes(q);
+            const inQ    = !q || (e.name || '').toLowerCase().includes(q) || (e.note || '').toLowerCase().includes(q);
             return inDate && inCat && inQ;
         });
     }, [expenses, dateWindow, catFilter, searchQuery]);
@@ -533,7 +569,7 @@ const Expenses = () => {
                                     <td className="px-5 py-4 text-xs text-zinc-500">{formatDate(exp.expenseDate)}</td>
                                     <td className="px-5 py-4 text-zinc-600 max-w-xs truncate text-xs">{exp.note || '—'}</td>
                                     <td className="px-5 py-4">
-                                        <button onClick={() => handleDelete(exp.id)} disabled={deletingId === exp.id}
+                                        <button onClick={() => handleDelete(exp)} disabled={deletingId === exp.id}
                                             className="p-1.5 rounded-lg text-zinc-400 hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-40"
                                             title="Delete expense">
                                             {deletingId === exp.id ? <RefreshCw size={14} className="animate-spin" /> : <Trash2 size={14} />}
@@ -547,7 +583,7 @@ const Expenses = () => {
             </div>
 
             {/* ── Add Expense Modal ── */}
-            {showAdd && <AddExpenseModal onSave={handleAdd} onClose={() => setShowAdd(false)} />}
+            {showAdd && <AddExpenseModal onSave={handleAdd} onClose={() => setShowAdd(false)} batches={batches} />}
         </div>
     );
 };

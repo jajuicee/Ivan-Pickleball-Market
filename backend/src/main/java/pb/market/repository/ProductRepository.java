@@ -7,7 +7,8 @@ import java.util.List;
 
 public interface ProductRepository extends JpaRepository<Product, Long> {
     
-    // This 'JOIN FETCH' tells Hibernate to get Products and Variants in 1 trip!
-    @Query("SELECT DISTINCT p FROM Product p LEFT JOIN FETCH p.variants")
+    // JOIN FETCH variants AND their defaultSupplier eagerly to avoid LazyInitialization errors
+    // (open-in-view=false means the session closes before Jackson serializes the response)
+    @Query("SELECT DISTINCT p FROM Product p LEFT JOIN FETCH p.variants v LEFT JOIN FETCH v.defaultSupplier ORDER BY p.id DESC")
     List<Product> findAllWithVariants();
 }
