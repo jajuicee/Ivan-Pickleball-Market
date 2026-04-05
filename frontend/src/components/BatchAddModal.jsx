@@ -28,20 +28,25 @@ const BatchAddModal = ({ products = [], suppliers = [], onClose, onSuccess }) =>
 
     // ── Product search ────────────────────────────────────────────────────────
     const inventoryList = useMemo(() =>
-        products.flatMap(p => p.variants.map(v => ({
+        products.flatMap(p => (p.variants || []).map(v => ({
             ...v,
+            brandName: p.brandName,
+            modelName: p.modelName,
             displayName: `${p.brandName} ${p.modelName}${v.color && v.color !== 'N/A' ? ` (${v.color})` : ''}`
         }))),
     [products]);
 
     const filteredResults = useMemo(() => {
-        if (!searchQuery) return [];
+        if (!searchQuery.trim()) return [];
+        const q = searchQuery.toLowerCase();
         return inventoryList
             .filter(i =>
-                i.displayName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                i.sku.toLowerCase().includes(searchQuery.toLowerCase())
+                (i.displayName || '').toLowerCase().includes(q) ||
+                (i.sku || '').toLowerCase().includes(q) ||
+                (i.brandName || '').toLowerCase().includes(q) ||
+                (i.modelName || '').toLowerCase().includes(q)
             )
-            .slice(0, 5);
+            .slice(0, 15); // Increased limit to help find recently added items
     }, [searchQuery, inventoryList]);
 
     // ── Supplier search ───────────────────────────────────────────────────────

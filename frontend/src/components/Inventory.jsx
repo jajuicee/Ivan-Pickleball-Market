@@ -17,26 +17,26 @@ const Inventory = ({ products = [], loading = false, refetchProducts }) => {
     // --- FLATTEN DATA ---
     const flattenedInventory = useMemo(() => {
         return products.flatMap(product =>
-            product.variants?.map(variant => {
+            (product.variants || []).map(variant => {
                 const isPaddle = product.category === 'Paddles';
                 return {
                     variantId: variant.id,
                     sku: variant.sku,
                     brand: product.brandName,
                     name: product.modelName,
-                    color: variant.color === 'N/A' ? '-' : variant.color,
-                    variantDetails: isPaddle ? `${variant.thicknessMm}mm ${variant.shape}` : '-',
-                    quantity: variant.stockQuantity,
+                    color: (variant.color === 'N/A' || !variant.color) ? '-' : variant.color,
+                    variantDetails: isPaddle ? `${variant.thicknessMm || 0}mm ${variant.shape || ''}` : '-',
+                    quantity: variant.stockQuantity ?? 0,
                     totalAdded: variant.totalAdded || 0,
                     totalSold: variant.totalSold || 0,
                     consigned: variant.consigned,
                     defaultSupplier: variant.defaultSupplier,
                     category: product.category,
                     dropdownName: isPaddle
-                        ? `${product.brandName} ${product.modelName} ${variant.color} ${variant.thicknessMm}mm`
+                        ? `${product.brandName} ${product.modelName} ${variant.color || ''} ${variant.thicknessMm || 0}mm`
                         : `${product.brandName} ${product.modelName}`
                 };
-            }) || []
+            })
         );
     }, [products]);
 
@@ -45,10 +45,10 @@ const Inventory = ({ products = [], loading = false, refetchProducts }) => {
         if (!tableFilter.trim()) return list;
         const q = tableFilter.toLowerCase();
         return list.filter(item =>
-            item.sku.toLowerCase().includes(q) ||
-            item.brand.toLowerCase().includes(q) ||
-            item.name.toLowerCase().includes(q) ||
-            item.dropdownName.toLowerCase().includes(q)
+            (item.sku || '').toLowerCase().includes(q) ||
+            (item.brand || '').toLowerCase().includes(q) ||
+            (item.name || '').toLowerCase().includes(q) ||
+            (item.dropdownName || '').toLowerCase().includes(q)
         );
     }, [tableFilter, flattenedInventory]);
 

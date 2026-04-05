@@ -33,12 +33,18 @@ public class ProductService {
         List<Product> products = productRepository.findAllWithVariants();
         if (products.isEmpty()) return products;
 
-        // Fetch aggregates
+        // Fetch aggregates with robust numeric casting
         Map<Long, Long> addedMap = stockBatchRepository.sumQuantityByVariantId().stream()
-                .collect(Collectors.toMap(row -> (Long) row[0], row -> row[1] != null ? (Long) row[1] : 0L));
+                .collect(Collectors.toMap(
+                    row -> ((Number) row[0]).longValue(), 
+                    row -> row[1] != null ? ((Number) row[1]).longValue() : 0L
+                ));
 
         Map<Long, Long> soldMap = transactionRepository.countByVariantId().stream()
-                .collect(Collectors.toMap(row -> (Long) row[0], row -> (Long) row[1]));
+                .collect(Collectors.toMap(
+                    row -> ((Number) row[0]).longValue(), 
+                    row -> row[1] != null ? ((Number) row[1]).longValue() : 0L
+                ));
 
         // Populate variants
         for (Product product : products) {

@@ -47,12 +47,12 @@ const AddProduct = ({ onProductAdded }) => {
         setStatus({ type: '', message: '' });
 
         const newProduct = {
-            brandName: paddleBase.brandName,
-            modelName: paddleBase.modelName,
+            brandName: paddleBase.brandName.trim(),
+            modelName: paddleBase.modelName.trim(),
             category: 'Paddles',
             variants: paddleVariants.map(v => ({
-                sku: v.sku,
-                color: v.color,
+                sku: v.sku.trim(),
+                color: v.color.trim(),
                 thicknessMm: parseInt(v.thicknessMm) || 0,
                 shape: v.shape,
                 acquisitionPrice: parseFloat(v.acquisitionPrice) || 0,
@@ -84,11 +84,11 @@ const AddProduct = ({ onProductAdded }) => {
         setStatus({ type: '', message: '' });
 
         const newMiscProduct = {
-            brandName: miscData.brandName,
-            modelName: miscData.name,
+            brandName: miscData.brandName.trim(),
+            modelName: miscData.name.trim(),
             category: miscData.category,
             variants: [{
-                sku: miscData.sku || `MISC-${Math.floor(Math.random() * 100000)}`,
+                sku: (miscData.sku || '').trim() || `MISC-${Math.floor(Math.random() * 100000)}`,
                 color: 'N/A',
                 thicknessMm: 0,
                 shape: 'N/A',

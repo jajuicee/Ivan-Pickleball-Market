@@ -509,9 +509,9 @@ const OrderHistory = () => {
                 ).join(' ');
                 const skus = g.items.map(i => (i.variant?.sku || '').toLowerCase()).join(' ');
                 return (
-                    g.customerName?.toLowerCase().includes(q) ||
-                    g.displayId?.toLowerCase().includes(q) ||
-                    g.paymentMethod?.toLowerCase().includes(q) ||
+                    (g.customerName || '').toLowerCase().includes(q) ||
+                    (g.displayId || '').toLowerCase().includes(q) ||
+                    (g.paymentMethod || '').toLowerCase().includes(q) ||
                     productNames.includes(q) ||
                     skus.includes(q)
                 );

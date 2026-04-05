@@ -16,4 +16,8 @@ public interface StockBatchRepository extends JpaRepository<StockBatch, Long> {
 
     @Query("SELECT s.variant.id, SUM(s.quantity) FROM StockBatch s WHERE s.status = 'RECEIVED' GROUP BY s.variant.id")
     List<Object[]> sumQuantityByVariantId();
+
+    // Eagerly loads variant → product and supplier in ONE query to avoid N+1 loops
+    @Query("SELECT b FROM StockBatch b JOIN FETCH b.variant v JOIN FETCH v.product LEFT JOIN FETCH b.supplier WHERE b.batchId IS NOT NULL")
+    List<StockBatch> findAllWithVariantAndProduct();
 }
