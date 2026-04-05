@@ -222,11 +222,18 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
                                         </p>
                                     </div>
                                     
-                                    <div className="flex items-center gap-3 w-full sm:w-auto">
+                                    <div className="flex items-center gap-3 w-full sm:w-auto mt-3 sm:mt-0 pb-1 sm:pb-0">
                                         <div className="flex-1 sm:w-20">
                                             <label className="block text-[10px] uppercase font-bold text-zinc-500 mb-1">Qty</label>
                                             <input type="number" min="1" max={item.variant.stockQuantity} required value={item.qty}
                                                 onChange={e => updateCartItem(item.variant.id, 'qty', e.target.value)}
+                                                className="w-full px-2 py-1.5 text-sm border rounded focus:ring-2 focus:ring-zinc-950 font-bold" />
+                                        </div>
+                                        <div className="flex-1 sm:w-24">
+                                            <label className="block text-[10px] uppercase font-bold text-zinc-500 mb-1">Price</label>
+                                            <input type="number" min="0" required value={item.finalPrice}
+                                                onChange={e => updateCartItem(item.variant.id, 'finalPrice', e.target.value)}
+                                                placeholder="Price..."
                                                 className="w-full px-2 py-1.5 text-sm border rounded focus:ring-2 focus:ring-zinc-950 font-bold" />
                                         </div>
                                         <div className="flex-1 sm:w-28">
