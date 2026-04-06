@@ -57,10 +57,8 @@ public class BatchActionController {
             ProductVariant variant = variantRepository.findById(item.getVariantId())
                     .orElseThrow(() -> new RuntimeException("Variant not found: " + item.getVariantId()));
 
-             // 1. Update total stock ONLY if RECEIVED
+            // Determine status: INCOMING batches don't add to sellable stock yet
             String status = request.getStatus() != null && request.getStatus().equals("INCOMING") ? "INCOMING" : "RECEIVED";
-            if ("RECEIVED".equals(status)) {
-            }
 
             // 2. Create StockBatch
             BigDecimal itemBaseCost = item.getBaseCost() != null ? item.getBaseCost() : BigDecimal.ZERO;
@@ -109,12 +107,8 @@ public class BatchActionController {
                 .filter(b -> batchId.equals(b.getBatchId()))
                 .collect(Collectors.toList());
 
-        for (StockBatch batch : stockBatches) {
-            ProductVariant variant = batch.getVariant();
-            // Try to deduct the quantity, but floor at 0 (ONLY if it was RECEIVED)
-            if ("RECEIVED".equals(batch.getStatus())) {
-            }
-        }
+        // Stock quantity is computed via @Formula on StockBatch.remainingQuantity,
+        // so simply deleting the batch rows is enough to remove them from active inventory.
 
         stockBatchRepository.deleteAll(stockBatches);
 
