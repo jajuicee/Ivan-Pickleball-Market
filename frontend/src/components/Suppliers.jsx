@@ -1,35 +1,145 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Building2, Plus, Pencil, Trash2, X, Save, CheckCircle, AlertCircle, Phone, FileText } from 'lucide-react';
+import { 
+    Building2, Plus, Pencil, Trash2, X, Save, CheckCircle, AlertCircle, Phone, 
+    FileText, Calendar as CalendarIcon, ChevronLeft, ChevronRight, ChevronDown 
+} from 'lucide-react';
 
 const API = `http://${window.location.hostname}:8080/api/suppliers`;
 
-const emptyForm = { name: '', contactInfo: '', notes: '' };
+const getStartOfMonth = (d) => new Date(d.getFullYear(), d.getMonth(), 1);
+const getEndOfMonth = (d) => new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59);
 
 const Suppliers = () => {
     const [suppliers, setSuppliers] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [reportLoading, setReportLoading] = useState(false);
+    
+    // Date Range State
+    const [startDate, setStartDate] = useState(getStartOfMonth(new Date()));
+    const [endDate, setEndDate] = useState(getEndOfMonth(new Date()));
+    const [showDatePicker, setShowDatePicker] = useState(false);
+
     const [modal, setModal] = useState(null); // null | { mode: 'add'|'edit', data: {} }
-    const [form, setForm] = useState(emptyForm);
+    const [form, setForm] = useState({ name: '', contactInfo: '', notes: '' });
     const [status, setStatus] = useState({ type: '', message: '' });
     const [deleteConfirm, setDeleteConfirm] = useState(null); // supplier id
 
-    const fetchSuppliers = async () => {
-        setLoading(true);
+    const fetchSuppliersWithReport = async () => {
+        setReportLoading(true);
         try {
-            const res = await axios.get(API);
-            setSuppliers(res.data);
+            // ISO strings for the backend LocalDateTime.parse
+            const s = startDate.toISOString().split('.')[0];
+            const e = endDate.toISOString().split('.')[0];
+            
+            const [suppRes, reportRes] = await Promise.all([
+                axios.get(API),
+                axios.get(`${API}/reports/consignment?start=${s}&end=${e}`)
+            ]);
+
+            // Merge report data into suppliers
+            const reportMap = {};
+            reportRes.data.forEach(r => { reportMap[r.id] = r.soldConsignedCount; });
+            
+            const merged = suppRes.data.map(sup => ({
+                ...sup,
+                consignedSold: reportMap[sup.id] || 0
+            }));
+
+            setSuppliers(merged);
         } catch (err) {
-            console.error('Failed to load suppliers', err);
+            console.error('Failed to load suppliers/report', err);
         } finally {
             setLoading(false);
+            setReportLoading(false);
         }
     };
 
-    useEffect(() => { fetchSuppliers(); }, []);
+    useEffect(() => { fetchSuppliersWithReport(); }, [startDate, endDate]);
+
+    const isSameDay = (a, b) => a && b && a.toDateString() === b.toDateString();
+    const isInRange = (date, start, end) => {
+        if (!start || !end) return false;
+        const t = date.getTime();
+        const s = Math.min(start.getTime(), end.getTime());
+        const e = Math.max(start.getTime(), end.getTime());
+        return t >= s && t <= e;
+    };
+
+    const CalendarPicker = ({ onApply, onClose }) => {
+        const [viewYear, setViewYear] = useState(startDate.getFullYear());
+        const [viewMonth, setViewMonth] = useState(startDate.getMonth());
+        const [localStart, setLocalStart] = useState(startDate);
+        const [localEnd, setLocalEnd] = useState(endDate);
+        const [hoverDate, setHoverDate] = useState(null);
+
+        const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+        const DAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+
+        const getDaysInMonth = (y, m) => new Date(y, m + 1, 0).getDate();
+        const getFirstDayOfMonth = (y, m) => new Date(y, m, 1).getDay();
+
+        const handleDayClick = (day) => {
+            const clicked = new Date(viewYear, viewMonth, day);
+            if (!localStart || (localStart && localEnd)) {
+                setLocalStart(clicked);
+                setLocalEnd(null);
+            } else {
+                if (clicked < localStart) {
+                    setLocalEnd(localStart);
+                    setLocalStart(clicked);
+                } else {
+                    setLocalEnd(clicked);
+                }
+            }
+        };
+
+        const days = Array.from({ length: getDaysInMonth(viewYear, viewMonth) }, (_, i) => i + 1);
+        const firstDay = getFirstDayOfMonth(viewYear, viewMonth);
+
+        return (
+            <div className="absolute right-0 top-12 z-50 bg-white border border-stone-200 rounded-2xl shadow-2xl p-5 w-80 animate-in fade-in zoom-in duration-200">
+                <div className="flex items-center justify-between mb-4">
+                    <button onClick={() => { if (viewMonth === 0) { setViewYear(v => v - 1); setViewMonth(11); } else setViewMonth(v => v - 1); }}
+                        className="p-1.5 rounded-lg hover:bg-stone-100 text-zinc-500"><ChevronLeft size={16} /></button>
+                    <span className="text-sm font-bold text-zinc-800">{MONTHS[viewMonth]} {viewYear}</span>
+                    <button onClick={() => { if (viewMonth === 11) { setViewYear(v => v + 1); setViewMonth(0); } else setViewMonth(v => v + 1); }}
+                        className="p-1.5 rounded-lg hover:bg-stone-100 text-zinc-500"><ChevronRight size={16} /></button>
+                </div>
+                <div className="grid grid-cols-7 mb-1 text-center text-xs font-bold text-zinc-400">
+                    {DAYS.map(d => <div key={d} className="py-1">{d}</div>)}
+                </div>
+                <div className="grid grid-cols-7 gap-y-1">
+                    {Array.from({ length: firstDay }).map((_, i) => <div key={`e-${i}`} />)}
+                    {days.map(d => {
+                        const date = new Date(viewYear, viewMonth, d);
+                        const isStart = isSameDay(date, localStart);
+                        const isEnd = isSameDay(date, localEnd);
+                        const inRange = isInRange(date, localStart, localEnd || hoverDate);
+                        return (
+                            <button key={d} onClick={() => handleDayClick(d)}
+                                onMouseEnter={() => setHoverDate(date)} onMouseLeave={() => setHoverDate(null)}
+                                className={`text-xs font-medium py-2 rounded-lg transition-all
+                                    ${isStart || isEnd ? 'bg-zinc-950 text-white font-bold' : ''}
+                                    ${inRange && !isStart && !isEnd ? 'bg-zinc-100 text-zinc-700 rounded-none' : ''}
+                                    ${!isStart && !isEnd && !inRange ? 'hover:bg-stone-100 text-zinc-700' : ''}`}>
+                                {d}
+                            </button>
+                        );
+                    })}
+                </div>
+                <div className="flex gap-2 mt-4 pt-4 border-t border-stone-100">
+                    <button onClick={onClose} className="flex-1 px-3 py-2 text-xs font-bold text-zinc-500 hover:bg-stone-50 rounded-xl">Cancel</button>
+                    <button onClick={() => onApply(localStart, localEnd)}
+                        disabled={!localStart || !localEnd}
+                        className="flex-1 px-3 py-2 text-xs font-bold bg-zinc-900 text-white rounded-xl hover:bg-zinc-700 disabled:opacity-50">Apply</button>
+                </div>
+            </div>
+        );
+    };
 
     const openAdd = () => {
-        setForm(emptyForm);
+        setForm({ name: '', contactInfo: '', notes: '' });
         setStatus({ type: '', message: '' });
         setModal({ mode: 'add' });
     };
@@ -51,7 +161,7 @@ const Suppliers = () => {
                 await axios.put(`${API}/${modal.id}`, form);
                 setStatus({ type: 'success', message: 'Supplier updated!' });
             }
-            await fetchSuppliers();
+            await fetchSuppliersWithReport();
             setTimeout(() => setModal(null), 1000);
         } catch (err) {
             setStatus({ type: 'error', message: err.response?.data?.error || 'Failed to save.' });
@@ -62,87 +172,137 @@ const Suppliers = () => {
         try {
             await axios.delete(`${API}/${id}`);
             setDeleteConfirm(null);
-            fetchSuppliers();
+            fetchSuppliersWithReport();
         } catch (err) {
             alert('Failed to delete supplier.');
         }
     };
 
     return (
-        <div className="flex flex-col h-full">
+        <div className="flex flex-col h-full bg-stone-50/50 p-6 lg:p-8">
             {/* HEADER */}
-            <div className="flex justify-between items-center mb-6 shrink-0">
-                <h2 className="text-2xl font-bold text-zinc-800 flex items-center gap-2">
-                    <Building2 className="text-zinc-500" /> Suppliers
-                    {!loading && (
-                        <span className="ml-2 text-sm font-normal text-zinc-400">{suppliers.length} registered</span>
-                    )}
-                </h2>
-                <button
-                    onClick={openAdd}
-                    className="flex items-center gap-2 px-4 py-2 bg-zinc-900 text-white rounded-xl text-sm font-bold hover:bg-zinc-700 transition-colors shadow-sm"
-                >
-                    <Plus size={16} /> Add Supplier
-                </button>
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8 shrink-0">
+                <div>
+                    <h2 className="text-3xl font-black text-zinc-900 tracking-tight flex items-center gap-3">
+                        <div className="p-2 bg-white rounded-xl shadow-sm border border-stone-200">
+                            <Building2 className="text-zinc-600" size={24} />
+                        </div>
+                        Suppliers
+                    </h2>
+                    <p className="text-sm text-zinc-500 mt-1 font-medium ml-12">
+                        Manage your supplier relationships and tracked consigned sales.
+                    </p>
+                </div>
+
+                <div className="flex items-center gap-3 w-full sm:w-auto">
+                    {/* DATE PICKER BUTTON */}
+                    <div className="relative">
+                        <button
+                            onClick={() => setShowDatePicker(!showDatePicker)}
+                            className="flex items-center gap-2 px-4 py-2.5 bg-white border border-stone-200 text-zinc-700 rounded-xl text-sm font-bold hover:border-zinc-300 hover:bg-stone-50 transition-all shadow-sm group"
+                        >
+                            <CalendarIcon size={16} className="text-zinc-400 group-hover:text-zinc-600" />
+                            <span className="min-w-[140px] text-left">
+                                {startDate.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })} – {endDate.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}
+                            </span>
+                            <ChevronDown size={14} className={`text-zinc-400 transition-transform duration-200 ${showDatePicker ? 'rotate-180' : ''}`} />
+                        </button>
+                        {showDatePicker && (
+                            <CalendarPicker
+                                onClose={() => setShowDatePicker(false)}
+                                onApply={(s, e) => {
+                                    setStartDate(s);
+                                    setEndDate(e);
+                                    setShowDatePicker(false);
+                                }}
+                            />
+                        )}
+                    </div>
+
+                    <button
+                        onClick={openAdd}
+                        className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-2.5 bg-zinc-900 text-white rounded-xl text-sm font-bold hover:bg-zinc-800 transition-all shadow-lg shadow-zinc-900/10 active:scale-95"
+                    >
+                        <Plus size={18} /> Add Supplier
+                    </button>
+                </div>
             </div>
 
             {/* TABLE */}
-            <div className="flex-1 overflow-auto bg-white border border-stone-200 rounded-xl shadow-sm">
+            <div className="flex-1 overflow-auto bg-white border border-stone-200/60 rounded-2xl shadow-xl shadow-stone-200/50">
                 <table className="w-full text-left border-collapse">
-                    <thead className="sticky top-0 bg-stone-100 shadow-sm z-10 text-xs uppercase tracking-wider text-zinc-500 font-bold border-b border-stone-200">
+                    <thead className="sticky top-0 bg-stone-50/80 backdrop-blur-md z-10 text-[10px] uppercase tracking-[0.15em] text-zinc-400 font-black border-b border-stone-200">
                         <tr>
-                            <th className="px-6 py-4">Name</th>
-                            <th className="px-6 py-4">Contact Info</th>
-                            <th className="px-6 py-4">Notes</th>
-                            <th className="px-6 py-4 text-right">Actions</th>
+                            <th className="px-8 py-5 whitespace-nowrap">Supplier Details</th>
+                            <th className="px-8 py-5 whitespace-nowrap">Contact</th>
+                            <th className="px-8 py-5 whitespace-nowrap">Notes</th>
+                            <th className="px-8 py-5 text-center whitespace-nowrap bg-indigo-50/30 text-indigo-600">Consigned Sold</th>
+                            <th className="px-8 py-5 text-right whitespace-nowrap">Actions</th>
                         </tr>
                     </thead>
-                    <tbody className="divide-y divide-stone-100 text-sm">
+                    <tbody className="divide-y divide-stone-100/80 text-sm">
                         {loading ? (
-                            Array.from({ length: 4 }).map((_, i) => (
+                            Array.from({ length: 5 }).map((_, i) => (
                                 <tr key={i} className="animate-pulse">
-                                    {[0,1,2,3].map(j => (
-                                        <td key={j} className="px-6 py-4">
-                                            <div className="h-4 bg-stone-200 rounded w-3/4" />
+                                    {[0, 1, 2, 3, 4].map(j => (
+                                        <td key={j} className="px-8 py-6">
+                                            <div className="h-4 bg-stone-100 rounded-full w-3/4" />
                                         </td>
                                     ))}
                                 </tr>
                             ))
                         ) : suppliers.length > 0 ? suppliers.map(s => (
-                            <tr key={s.id} className="hover:bg-stone-50 transition-colors group">
-                                <td className="px-6 py-4 font-bold text-zinc-800 flex items-center gap-2">
-                                    <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-black text-xs shrink-0">
-                                        {s.name.charAt(0).toUpperCase()}
+                            <tr key={s.id} className="hover:bg-stone-50/50 transition-colors group">
+                                <td className="px-8 py-6 font-bold text-zinc-900">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-zinc-100 to-stone-100 text-zinc-600 flex items-center justify-center font-black text-sm border border-stone-200/50 shadow-sm transition-transform group-hover:scale-110">
+                                            {s.name.charAt(0).toUpperCase()}
+                                        </div>
+                                        <div className="flex flex-col">
+                                            <span className="text-zinc-900 leading-none mb-1">{s.name}</span>
+                                            <span className="text-[10px] font-medium text-zinc-400 uppercase tracking-wider">Registered Supplier</span>
+                                        </div>
                                     </div>
-                                    {s.name}
                                 </td>
-                                <td className="px-6 py-4 text-zinc-600">
+                                <td className="px-8 py-6 text-zinc-600">
                                     {s.contactInfo ? (
-                                        <span className="flex items-center gap-1.5">
-                                            <Phone size={13} className="text-zinc-400" /> {s.contactInfo}
-                                        </span>
-                                    ) : <span className="text-zinc-300">—</span>}
+                                        <div className="flex items-center gap-2 px-3 py-1.5 bg-stone-100/50 rounded-lg w-fit border border-stone-200/30">
+                                            <Phone size={12} className="text-zinc-400" />
+                                            <span className="text-xs font-semibold">{s.contactInfo}</span>
+                                        </div>
+                                    ) : <span className="text-zinc-300 italic text-xs">No contact info</span>}
                                 </td>
-                                <td className="px-6 py-4 text-zinc-500 max-w-xs truncate">
+                                <td className="px-8 py-6 text-zinc-500 max-w-[200px]">
                                     {s.notes ? (
-                                        <span className="flex items-center gap-1.5">
-                                            <FileText size={13} className="text-zinc-400" /> {s.notes}
-                                        </span>
+                                        <div className="flex items-start gap-2 group/note">
+                                            <FileText size={14} className="text-zinc-300 mt-0.5 shrink-0" />
+                                            <span className="text-xs leading-relaxed line-clamp-2">{s.notes}</span>
+                                        </div>
                                     ) : <span className="text-zinc-300">—</span>}
                                 </td>
-                                <td className="px-6 py-4 text-right">
-                                    <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <td className="px-8 py-6 text-center bg-indigo-50/10">
+                                    <div className="inline-flex flex-col items-center">
+                                        <span className={`text-lg font-black ${s.consignedSold > 0 ? 'text-indigo-600' : 'text-zinc-300'}`}>
+                                            {s.consignedSold}
+                                        </span>
+                                        {s.consignedSold > 0 && (
+                                            <span className="text-[9px] font-black uppercase tracking-tighter text-indigo-400 -mt-1">Sold Items</span>
+                                        )}
+                                    </div>
+                                </td>
+                                <td className="px-8 py-6 text-right">
+                                    <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-all -translate-x-2 group-hover:translate-x-0">
                                         <button
                                             onClick={() => openEdit(s)}
-                                            className="p-1.5 rounded-lg hover:bg-blue-50 text-zinc-400 hover:text-blue-600 transition-colors"
-                                            title="Edit"
+                                            className="p-2 rounded-xl hover:bg-zinc-100 text-zinc-400 hover:text-zinc-900 transition-colors"
+                                            title="Edit Supplier"
                                         >
                                             <Pencil size={16} />
                                         </button>
                                         <button
                                             onClick={() => setDeleteConfirm(s.id)}
-                                            className="p-1.5 rounded-lg hover:bg-red-50 text-zinc-400 hover:text-red-600 transition-colors"
-                                            title="Delete"
+                                            className="p-2 rounded-xl hover:bg-red-50 text-zinc-400 hover:text-red-600 transition-colors"
+                                            title="Delete Supplier"
                                         >
                                             <Trash2 size={16} />
                                         </button>
@@ -151,7 +311,7 @@ const Suppliers = () => {
                             </tr>
                         )) : (
                             <tr>
-                                <td colSpan="4" className="px-6 py-16 text-center text-zinc-400">
+                                <td colSpan="5" className="px-6 py-16 text-center text-zinc-400">
                                     <Building2 size={40} className="mx-auto mb-3 opacity-30" />
                                     <p className="font-bold">No suppliers yet</p>
                                     <p className="text-sm mt-1">Add your first supplier to start tracking stock origin.</p>

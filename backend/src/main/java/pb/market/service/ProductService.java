@@ -1,12 +1,10 @@
 package pb.market.service;
 
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import pb.market.entity.Product;
-import pb.market.entity.ProductVariant;
-import pb.market.entity.StockBatch;
-import pb.market.entity.Supplier;
+import pb.market.entity.*;
 import pb.market.repository.ProductRepository;
 import pb.market.repository.StockBatchRepository;
 import pb.market.repository.SupplierRepository;
@@ -28,6 +26,28 @@ public class ProductService {
     private final StockBatchRepository stockBatchRepository;
     private final SupplierRepository supplierRepository;
     private final TransactionRepository transactionRepository;
+
+/*
+    @PostConstruct
+    @Transactional
+    public void migrateLegacyTransactions() {
+        // Find all transactions where supplier is null
+        List<Transaction> legacy = transactionRepository.findAll().stream()
+                .filter(t -> t.getSupplier() == null)
+                .collect(Collectors.toList());
+
+        if (!legacy.isEmpty()) {
+            for (Transaction t : legacy) {
+                ProductVariant v = t.getVariant();
+                if (v != null) {
+                    t.setSupplier(v.getDefaultSupplier());
+                    t.setConsigned(v.isConsigned());
+                }
+            }
+            transactionRepository.saveAll(legacy);
+        }
+    }
+*/
 
     public List<Product> getAllProducts() {
         List<Product> products = productRepository.findAllWithVariants();

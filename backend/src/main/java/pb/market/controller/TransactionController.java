@@ -11,6 +11,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
@@ -44,7 +45,11 @@ public class TransactionController {
             StockBatch oldestBatch = batches.get(0);
             oldestBatch.setRemainingQuantity(oldestBatch.getRemainingQuantity() - 1);
             stockBatchRepository.save(oldestBatch);
+            
             transaction.setCostPrice(oldestBatch.getAcquisitionPrice());
+            transaction.setSupplier(oldestBatch.getSupplier());
+            transaction.setConsigned(oldestBatch.isConsigned());
+            transaction.setStockBatch(oldestBatch);
         } else {
             // Fallback if no valid batches
             transaction.setCostPrice(variant.getAcquisitionPrice());
@@ -76,11 +81,7 @@ public class TransactionController {
         t.setStatus("FULL");
         transactionRepository.save(t);
         // Reload with JOIN FETCH so lazy relations are initialized before JSON serialization
-        return ResponseEntity.ok(transactionRepository.findAllWithDetails()
-                .stream()
-                .filter(tx -> tx.getId().equals(id))
-                .findFirst()
-                .orElse(t));
+        return ResponseEntity.ok(transactionRepository.findByIdWithDetails(id).orElse(t));
     }
 
     // ── Update payment method for an entire order group ───────────────────────
@@ -98,9 +99,9 @@ public class TransactionController {
         List<Transaction> group;
         if (transactionId.startsWith("LEGACY-")) {
             Long id = Long.parseLong(transactionId.replace("LEGACY-", ""));
-            group = transactionRepository.findAllWithDetails().stream().filter(tx -> tx.getId().equals(id)).toList();
+            group = transactionRepository.findById(id).map(List::of).orElse(Collections.emptyList());
         } else {
-            group = transactionRepository.findAllWithDetails().stream().filter(tx -> transactionId.equals(tx.getTransactionId())).toList();
+            group = transactionRepository.findByTransactionId(transactionId);
         }
 
         if (group.isEmpty()) {
@@ -115,16 +116,15 @@ public class TransactionController {
         return ResponseEntity.ok(Map.of("message", "Payment method updated.", "transactionId", transactionId));
     }
 
-    // ── Cancel an entire order group (by transactionId) + restock items ────────
     @Transactional
     @PostMapping("/cancel/{transactionId}")
     public ResponseEntity<?> cancelOrder(@PathVariable String transactionId) {
         List<Transaction> group;
         if (transactionId.startsWith("LEGACY-")) {
             Long id = Long.parseLong(transactionId.replace("LEGACY-", ""));
-            group = transactionRepository.findAllWithDetails().stream().filter(tx -> tx.getId().equals(id)).toList();
+            group = transactionRepository.findById(id).map(List::of).orElse(Collections.emptyList());
         } else {
-            group = transactionRepository.findAllWithDetails().stream().filter(tx -> transactionId.equals(tx.getTransactionId())).toList();
+            group = transactionRepository.findByTransactionId(transactionId);
         }
 
         if (group.isEmpty()) {
@@ -132,19 +132,27 @@ public class TransactionController {
         }
 
         for (Transaction tx : group) {
-            // 1. Restore the variant's summary stock count (each tx = 1 unit sold)
-            ProductVariant variant = tx.getVariant();
-
-            // 2. Restore the FIFO batch — add 1 unit back to the most recently consumed RECEIVED batch
-            List<StockBatch> batches = stockBatchRepository
-                .findByVariantIdAndStatusOrderByRestockedAtDesc(variant.getId(), "RECEIVED");
-            if (!batches.isEmpty()) {
-                StockBatch batch = batches.get(0);
+            // 1. Restore the stock batch accurately
+            StockBatch batch = tx.getStockBatch();
+            
+            if (batch != null) {
+                // Ideal case: we know exactly which batch this unit came from.
                 batch.setRemainingQuantity(batch.getRemainingQuantity() + 1);
                 stockBatchRepository.save(batch);
+            } else {
+                // Fallback for legacy transactions (null stockBatch): 
+                // Restore to the most recently restocked RECEIVED batch for that variant.
+                ProductVariant variant = tx.getVariant();
+                List<StockBatch> batches = stockBatchRepository
+                    .findByVariantIdAndStatusOrderByRestockedAtDesc(variant.getId(), "RECEIVED");
+                if (!batches.isEmpty()) {
+                    StockBatch mostRecent = batches.get(0);
+                    mostRecent.setRemainingQuantity(mostRecent.getRemainingQuantity() + 1);
+                    stockBatchRepository.save(mostRecent);
+                }
             }
 
-            // 3. Delete the transaction row entirely so it's fully erased from history
+            // 2. Delete the transaction row entirely (user wants deletion, not 'CANCELLED' status)
             transactionRepository.delete(tx);
         }
 

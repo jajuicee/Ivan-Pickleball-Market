@@ -433,9 +433,9 @@ const OrderHistory = () => {
             await axios.post(`http://${window.location.hostname}:8080/api/transactions/cancel/${group.orderId}`);
             fetchTransactions();
             // Fix #11: show success toast
-            showToast(`Order #${group.displayId} cancelled and stock restored.`, 'success');
+            showToast(`Order #${group.displayId} deleted and stock restored.`, 'success');
         } catch (err) {
-            showToast(err.response?.data?.error || 'Failed to cancel order.', 'error');
+            showToast(err.response?.data?.error || 'Failed to delete order.', 'error');
         } finally {
             setCancelling(null);
         }
@@ -602,10 +602,10 @@ const OrderHistory = () => {
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden" style={{ animation: 'toastIn 200ms ease' }}>
                         <div className="bg-red-600 px-6 py-4 flex items-center gap-3 text-white">
                             <XCircle size={20} />
-                            <h3 className="font-bold text-base">Cancel Order #{confirmModal.displayId}?</h3>
+                            <h3 className="font-bold text-base">Delete Order #{confirmModal.displayId}?</h3>
                         </div>
                         <div className="p-6">
-                            <p className="text-sm text-zinc-600 mb-1">This will permanently delete this order and restore stock for all items.</p>
+                            <p className="text-sm text-zinc-600 mb-1">This will permanently <strong>delete</strong> this order from history and restore stock for all items.</p>
                             <p className="text-xs text-zinc-400 font-medium">Customer: <span className="font-bold text-zinc-700">{confirmModal.customerName}</span></p>
                             <p className="text-xs text-zinc-400 font-medium mt-0.5">{confirmModal.items?.length} item(s) · Total: {formatCurrency(confirmModal.totalPrice)}</p>
                         </div>
@@ -617,7 +617,7 @@ const OrderHistory = () => {
                             <button
                                 onClick={() => confirmCancel(confirmModal)}
                                 className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-sm transition-colors"
-                            >Yes, Cancel</button>
+                            >Yes, Delete</button>
                         </div>
                     </div>
                 </div>
@@ -875,7 +875,7 @@ const OrderHistory = () => {
                                 return (
                                     <React.Fragment key={group.orderId}>
                                         <tr
-                                            className={isUnfinished ? 'bg-amber-50/10' : group.status === 'CANCELLED' ? 'bg-zinc-50/50 opacity-60' : ''}
+                                            className={isUnfinished ? 'bg-amber-50/10' : ''}
                                             style={{
                                                 transition: 'background-color 150ms ease',
                                                 animation: 'fadeSlideIn 220ms ease both',
@@ -941,11 +941,7 @@ const OrderHistory = () => {
                                                 </div>
                                             </td>
                                             <td className="px-5 py-4">
-                                                {group.status === 'CANCELLED' ? (
-                                                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold bg-zinc-200 text-zinc-600">
-                                                        <XCircle size={11} /> Cancelled
-                                                    </span>
-                                                ) : isUnfinished ? (
+                                                {isUnfinished ? (
                                                     <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-700">
                                                         <Clock size={11} /> {group.status === 'UNPAID' ? 'Pending' : 'Partial'}
                                                     </span>
@@ -994,7 +990,7 @@ const OrderHistory = () => {
                                                             Expand to<br/>pay items
                                                         </div>
                                                     )}
-                                                    {group.status !== 'CANCELLED' && (
+                                                    {
                                                         <button
                                                             onClick={() => handleCancelOrder(group)}
                                                             disabled={cancelling === group.orderId}
@@ -1009,9 +1005,9 @@ const OrderHistory = () => {
                                                             {cancelling === group.orderId
                                                                 ? <Loader2 size={12} className="animate-spin" />
                                                                 : <XCircle size={12} />}
-                                                            Cancel
+                                                            Delete
                                                         </button>
-                                                    )}
+                                                    }
                                                 </div>
                                             </td>
                                         </tr>
@@ -1046,9 +1042,7 @@ const OrderHistory = () => {
                                                                                     : '—'}
                                                                             </td>
                                                                             <td className="py-2 font-mono text-xs text-center w-20">
-                                                                                {item.status === 'CANCELLED' ? (
-                                                                                    <span className="text-zinc-600 font-bold bg-zinc-200 px-1.5 py-0.5 rounded">CX</span>
-                                                                                ) : item.status === 'FULL' ? (
+                                                                                {item.status === 'FULL' ? (
                                                                                     <span className="text-green-600 font-bold bg-green-50 px-1.5 py-0.5 rounded">PAID</span>
                                                                                 ) : (
                                                                                     <span className="text-amber-600 font-bold bg-amber-50 px-1.5 py-0.5 rounded">{item.status}</span>

@@ -18,6 +18,12 @@ public class Expense {
     private String category; // Miscellaneous, Bills, Supplies, Salary
 
     private BigDecimal cost;
+    
+    private String type = "EXPENSE"; // EXPENSE or INCOME
+
+    public String getType() {
+        return type == null ? "EXPENSE" : type;
+    }
 
     private String note;
 

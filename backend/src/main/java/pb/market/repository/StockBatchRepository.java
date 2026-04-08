@@ -20,4 +20,6 @@ public interface StockBatchRepository extends JpaRepository<StockBatch, Long> {
     // Eagerly loads variant → product and supplier in ONE query to avoid N+1 loops
     @Query("SELECT b FROM StockBatch b JOIN FETCH b.variant v JOIN FETCH v.product LEFT JOIN FETCH b.supplier WHERE b.batchId IS NOT NULL")
     List<StockBatch> findAllWithVariantAndProduct();
+
+    List<StockBatch> findByBatchId(String batchId);
 }

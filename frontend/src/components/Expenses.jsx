@@ -135,15 +135,15 @@ const CalendarPicker = ({ onApply, onClose, visible }) => {
 
 // ── Add Expense Modal ─────────────────────────────────────────────────────────
 const AddExpenseModal = ({ onSave, onClose, batches = [] }) => {
-    const [form, setForm] = useState({ name: '', category: 'Miscellaneous', cost: '', note: '', batchId: '' });
+    const [form, setForm] = useState({ name: '', category: 'Miscellaneous', cost: '', note: '', batchId: '', type: 'EXPENSE' });
     const [saving, setSaving] = useState(false);
     const [err, setErr] = useState('');
 
     const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
     const handleSubmit = async () => {
-        if (!form.name.trim()) return setErr('Expense name is required.');
-        if (!form.cost || isNaN(Number(form.cost)) || Number(form.cost) <= 0) return setErr('Enter a valid cost.');
+        if (!form.name.trim()) return setErr(`${form.type === 'INCOME' ? 'Income' : 'Expense'} name is required.`);
+        if (!form.cost || isNaN(Number(form.cost)) || Number(form.cost) <= 0) return setErr(`Enter a valid ${form.type === 'INCOME' ? 'amount' : 'cost'}.`);
         setSaving(true); setErr('');
         try {
             const dataToSave = { ...form, cost: Number(form.cost) };
@@ -151,19 +151,30 @@ const AddExpenseModal = ({ onSave, onClose, batches = [] }) => {
             await onSave(dataToSave);
             onClose();
         } catch {
-            setErr('Failed to save expense. Please try again.');
+            setErr(`Failed to save ${form.type.toLowerCase()}. Please try again.`);
         } finally {
             setSaving(false);
         }
     };
 
+    const isExp = form.type === 'EXPENSE';
+
     return (
         <div className="fixed inset-0 bg-zinc-950/60 z-[200] flex items-center justify-center p-4 backdrop-blur-sm" onClick={onClose}
             style={{ animation: 'fadeSlideIn 180ms ease' }}>
             <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md border border-stone-200" onClick={e => e.stopPropagation()}>
-                <div className="flex items-center gap-3 mb-5 pb-4 border-b border-stone-100">
-                    <div className="p-2 bg-stone-100 rounded-xl"><Receipt size={18} className="text-zinc-700" /></div>
-                    <h3 className="text-base font-bold text-zinc-800">Add Expense</h3>
+                <div className="flex items-center justify-between mb-5 pb-4 border-b border-stone-100">
+                    <div className="flex items-center gap-3">
+                        <div className={`p-2 rounded-xl ${isExp ? 'bg-stone-100' : 'bg-emerald-100'}`}>
+                            {isExp ? <Receipt size={18} className="text-zinc-700" /> : <TrendingUp size={18} className="text-emerald-700" />}
+                        </div>
+                        <h3 className="text-base font-bold text-zinc-800">{isExp ? 'Add Expense' : 'Add Money'}</h3>
+                    </div>
+                    {/* Toggle */}
+                    <div className="flex bg-stone-100 p-1 rounded-lg">
+                        <button onClick={() => set('type', 'EXPENSE')} className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-md transition-all ${isExp ? 'bg-white shadow text-zinc-900' : 'text-zinc-400 hover:text-zinc-600'}`}>Expense</button>
+                        <button onClick={() => set('type', 'INCOME')} className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-md transition-all ${!isExp ? 'bg-emerald-600 shadow text-white' : 'text-zinc-400 hover:text-zinc-600'}`}>Income</button>
+                    </div>
                 </div>
 
                 {err && (
@@ -175,50 +186,54 @@ const AddExpenseModal = ({ onSave, onClose, batches = [] }) => {
                 <div className="space-y-4">
                     {/* Name */}
                     <div>
-                        <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1.5">Expense Name *</label>
+                        <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1.5">{isExp ? 'Expense Name' : 'Income Source'} *</label>
                         <input
                             type="text" autoFocus value={form.name} onChange={e => set('name', e.target.value)}
-                            placeholder="e.g. Internet Bill, Office Supplies…"
+                            placeholder={isExp ? "e.g. Internet Bill, Office Supplies…" : "e.g. Investment, Refund, Initial Capital…"}
                             className="w-full px-3 py-2.5 text-sm border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-300 text-zinc-800"
                         />
                     </div>
 
                     {/* Category */}
-                    <div>
-                        <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1.5">Category *</label>
-                        <div className="relative">
-                            <select
-                                value={form.category} onChange={e => set('category', e.target.value)}
-                                className="w-full appearance-none px-3 py-2.5 text-sm border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-300 text-zinc-800 bg-white pr-9"
-                            >
-                                {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-                            </select>
-                            <ChevronDown size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />
+                    {isExp && (
+                        <div>
+                            <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1.5">Category *</label>
+                            <div className="relative">
+                                <select
+                                    value={form.category} onChange={e => set('category', e.target.value)}
+                                    className="w-full appearance-none px-3 py-2.5 text-sm border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-300 text-zinc-800 bg-white pr-9"
+                                >
+                                    {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                                </select>
+                                <ChevronDown size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />
+                            </div>
                         </div>
-                    </div>
+                    )}
 
                     {/* Batch Link */}
-                    <div>
-                        <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1.5">Link to Supply Batch <span className="font-normal normal-case text-zinc-400">(optional)</span></label>
-                        <div className="relative">
-                            <select
-                                value={form.batchId} onChange={e => set('batchId', e.target.value)}
-                                className="w-full appearance-none px-3 py-2.5 text-sm border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-300 text-zinc-800 bg-white pr-9"
-                            >
-                                <option value="">None (Standalone Expense)</option>
-                                {batches.map(b => (
-                                    <option key={b.batchId} value={b.batchId}>
-                                        {new Date(b.date).toLocaleDateString()} - {b.supplier} ({b.totalQuantity} items) - ₱{b.totalExpense?.toLocaleString()}
-                                    </option>
-                                ))}
-                            </select>
-                            <ChevronDown size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />
+                    {isExp && (
+                        <div>
+                            <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1.5">Link to Supply Batch <span className="font-normal normal-case text-zinc-400">(optional)</span></label>
+                            <div className="relative">
+                                <select
+                                    value={form.batchId} onChange={e => set('batchId', e.target.value)}
+                                    className="w-full appearance-none px-3 py-2.5 text-sm border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-300 text-zinc-800 bg-white pr-9"
+                                >
+                                    <option value="">None (Standalone Expense)</option>
+                                    {batches.map(b => (
+                                        <option key={b.batchId} value={b.batchId}>
+                                            {new Date(b.date).toLocaleDateString()} - {b.supplier} ({b.totalQuantity} items) - ₱{b.totalExpense?.toLocaleString()}
+                                        </option>
+                                    ))}
+                                </select>
+                                <ChevronDown size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />
+                            </div>
                         </div>
-                    </div>
+                    )}
 
                     {/* Cost */}
                     <div>
-                        <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1.5">Cost (₱) *</label>
+                        <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1.5">{isExp ? 'Cost' : 'Amount'} (₱) *</label>
                         <div className="relative">
                             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 text-sm font-medium">₱</span>
                             <input
@@ -242,9 +257,9 @@ const AddExpenseModal = ({ onSave, onClose, batches = [] }) => {
 
                 <div className="flex gap-3 mt-6">
                     <button onClick={onClose} className="flex-1 py-2.5 text-sm font-bold rounded-xl border border-stone-200 text-zinc-500 hover:bg-stone-50 transition-colors">Cancel</button>
-                    <button onClick={handleSubmit} disabled={saving} className="flex-1 py-2.5 text-sm font-bold rounded-xl bg-zinc-950 text-white hover:bg-zinc-800 disabled:opacity-50 transition-colors flex items-center justify-center gap-2">
-                        {saving ? <RefreshCw size={14} className="animate-spin" /> : <Plus size={14} />}
-                        {saving ? 'Saving…' : 'Add Expense'}
+                    <button onClick={handleSubmit} disabled={saving} className={`flex-1 py-2.5 text-sm font-bold rounded-xl text-white transition-colors flex items-center justify-center gap-2 ${saving ? 'bg-zinc-700' : isExp ? 'bg-zinc-950 hover:bg-zinc-800' : 'bg-emerald-600 hover:bg-emerald-700'}`}>
+                        {saving ? <RefreshCw size={14} className="animate-spin" /> : isExp ? <Plus size={14} /> : <TrendingUp size={14} />}
+                        {saving ? 'Saving…' : isExp ? 'Add Expense' : 'Add Money'}
                     </button>
                 </div>
             </div>
@@ -263,6 +278,8 @@ const Expenses = () => {
     const [searchQuery, setSearch]  = useState('');
     const [showAdd,   setShowAdd]   = useState(false);
     const [deletingId, setDeleting] = useState(null);
+    const [editingId, setEditing]   = useState(null);
+    const [editNote,   setEditNote]   = useState('');
 
     const [activePreset, setActivePreset] = useState('1M');
     const [customRange,  setCustomRange]  = useState(null);
@@ -297,11 +314,21 @@ const Expenses = () => {
         setExpenses(prev => [res.data, ...prev]);
     };
 
+    const handleUpdateNote = async (id) => {
+        try {
+            const res = await axios.put(`http://${window.location.hostname}:8080/api/expenses/${id}`, { note: editNote });
+            setExpenses(prev => prev.map(e => e.id === id ? res.data : e));
+            setEditing(null);
+        } catch {
+            setError('Failed to update note.');
+        }
+    };
+
     const handleDelete = async (exp) => {
         const hasBatch = !!exp.batchId;
         const msg = hasBatch
             ? 'This expense is linked to a supply batch.\nDeleting it will also revert the batch and remove its stock entries.\n\nContinue?'
-            : 'Delete this expense?';
+            : 'Delete this record?';
         if (!window.confirm(msg)) return;
         setDeleting(exp.id);
         try {
@@ -316,7 +343,7 @@ const Expenses = () => {
                 setExpenses(prev => prev.filter(e => e.id !== exp.id));
             }
         } catch {
-            setError('Failed to delete expense.');
+            setError('Failed to delete record.');
         } finally {
             setDeleting(null);
         }
@@ -341,7 +368,7 @@ const Expenses = () => {
         return expenses.filter(e => {
             const d = new Date(e.expenseDate);
             const inDate = !dateWindow || (d >= dateWindow.start && d <= dateWindow.end);
-            const inCat  = catFilter === 'All' || e.category === catFilter;
+            const inCat  = catFilter === 'All' || e.category === catFilter || (e.type === 'INCOME' && catFilter === 'All');
             const inQ    = !q || (e.name || '').toLowerCase().includes(q) || (e.note || '').toLowerCase().includes(q);
             return inDate && inCat && inQ;
         });
@@ -350,12 +377,18 @@ const Expenses = () => {
     const totals = useMemo(() => {
         const byCategory = {};
         CATEGORIES.forEach(c => { byCategory[c] = 0; });
-        let total = 0;
+        let expenseTotal = 0;
+        let manualIncomeTotal = 0;
         filtered.forEach(e => {
-            total += Number(e.cost ?? 0);
-            if (byCategory[e.category] !== undefined) byCategory[e.category] += Number(e.cost ?? 0);
+            const val = Number(e.cost ?? 0);
+            if (e.type === 'INCOME') {
+                manualIncomeTotal += val;
+            } else {
+                expenseTotal += val;
+                if (byCategory[e.category] !== undefined) byCategory[e.category] += val;
+            }
         });
-        return { total, byCategory };
+        return { total: expenseTotal, manualIncome: manualIncomeTotal, byCategory };
     }, [filtered]);
 
     const txTotals = useMemo(() => {
@@ -369,7 +402,7 @@ const Expenses = () => {
         return { income };
     }, [transactions, dateWindow]);
 
-    const currentMoney = txTotals.income - totals.total;
+    const currentMoney = txTotals.income - totals.total + totals.manualIncome;
 
     const periodLabel = customRange ? customRange.label
         : activePreset === 'TODAY' ? "Today" : activePreset === '1W' ? 'This Week'
@@ -551,29 +584,66 @@ const Expenses = () => {
                                 </td>
                             </tr>
                         ) : filtered.map((exp, idx) => {
-                            const c = CATEGORY_COLORS[exp.category] || CATEGORY_COLORS['Miscellaneous'];
+                            const isInc = exp.type === 'INCOME';
+                            const c = isInc 
+                                ? { bg: '#dcfce7', text: '#166534', dot: '#22c55e' }
+                                : (CATEGORY_COLORS[exp.category] || CATEGORY_COLORS['Miscellaneous']);
                             return (
                                 <tr key={exp.id}
                                     style={{ animation: 'fadeSlideIn 220ms ease both', animationDelay: `${Math.min(idx * 20, 250)}ms`, transition: 'background-color 150ms ease' }}
                                     onMouseEnter={e => e.currentTarget.style.backgroundColor = '#fafaf9'}
                                     onMouseLeave={e => e.currentTarget.style.backgroundColor = ''}>
-                                    <td className="px-5 py-4 font-semibold text-zinc-800">{exp.name}</td>
+                                    <td className="px-5 py-4 font-semibold text-zinc-800">
+                                        <div className="flex items-center gap-2">
+                                            {isInc ? <TrendingUp size={14} className="text-emerald-600" /> : <Receipt size={14} className="text-zinc-400" />}
+                                            {exp.name}
+                                        </div>
+                                    </td>
                                     <td className="px-5 py-4">
                                         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold"
                                             style={{ backgroundColor: c.bg, color: c.text }}>
                                             <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: c.dot }} />
-                                            {exp.category}
+                                            {isInc ? 'Income' : exp.category}
                                         </span>
                                     </td>
-                                    <td className="px-5 py-4 text-right font-mono font-black text-zinc-900">{formatCurrency(exp.cost)}</td>
+                                    <td className={`px-5 py-4 text-right font-mono font-black ${isInc ? 'text-emerald-600' : 'text-zinc-900'}`}>
+                                        {isInc ? '+' : ''}{formatCurrency(exp.cost)}
+                                    </td>
                                     <td className="px-5 py-4 text-xs text-zinc-500">{formatDate(exp.expenseDate)}</td>
-                                    <td className="px-5 py-4 text-zinc-600 max-w-xs truncate text-xs">{exp.note || '—'}</td>
+                                    <td className="px-5 py-4 text-zinc-600 max-w-xs text-xs">
+                                        {editingId === exp.id ? (
+                                            <div className="flex items-center gap-2">
+                                                <input
+                                                    autoFocus
+                                                    className="w-full px-2 py-1 border border-stone-300 rounded focus:outline-none focus:ring-1 focus:ring-zinc-400 text-xs"
+                                                    value={editNote}
+                                                    onChange={e => setEditNote(e.target.value)}
+                                                    onKeyDown={e => {
+                                                        if (e.key === 'Enter') handleUpdateNote(exp.id);
+                                                        if (e.key === 'Escape') setEditing(null);
+                                                    }}
+                                                    onBlur={() => handleUpdateNote(exp.id)}
+                                                />
+                                            </div>
+                                        ) : (
+                                            <div 
+                                                className="cursor-pointer hover:bg-stone-100 px-1 py-0.5 rounded transition-colors truncate group flex items-center gap-1"
+                                                onClick={() => { setEditing(exp.id); setEditNote(exp.note || ''); }}
+                                                title="Click to edit note"
+                                            >
+                                                {exp.note || '—'}
+                                                <Plus size={10} className="opacity-0 group-hover:opacity-100 text-zinc-400" />
+                                            </div>
+                                        )}
+                                    </td>
                                     <td className="px-5 py-4">
-                                        <button onClick={() => handleDelete(exp)} disabled={deletingId === exp.id}
-                                            className="p-1.5 rounded-lg text-zinc-400 hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-40"
-                                            title="Delete expense">
-                                            {deletingId === exp.id ? <RefreshCw size={14} className="animate-spin" /> : <Trash2 size={14} />}
-                                        </button>
+                                        <div className="flex items-center justify-end gap-1">
+                                            <button onClick={() => handleDelete(exp)} disabled={deletingId === exp.id}
+                                                className="p-1.5 rounded-lg text-zinc-400 hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-40"
+                                                title="Delete record">
+                                                {deletingId === exp.id ? <RefreshCw size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                                            </button>
+                                        </div>
                                     </td>
                                 </tr>
                             );

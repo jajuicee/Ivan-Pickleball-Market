@@ -1,5 +1,6 @@
 package pb.market.controller;
 
+import pb.market.repository.VariantRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
@@ -15,7 +16,6 @@ import pb.market.repository.SupplierRepository;
 import pb.market.repository.VariantRepository;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -26,10 +26,14 @@ import java.util.stream.Collectors;
 @CrossOrigin(origins = "*")
 public class BatchActionController {
 
-    @Autowired private StockBatchRepository stockBatchRepository;
-    @Autowired private VariantRepository variantRepository;
-    @Autowired private SupplierRepository supplierRepository;
-    @Autowired private ExpenseRepository expenseRepository;
+    @Autowired
+    private StockBatchRepository stockBatchRepository;
+    @Autowired
+    private VariantRepository variantRepository;
+    @Autowired
+    private SupplierRepository supplierRepository;
+    @Autowired
+    private ExpenseRepository expenseRepository;
 
     @PostMapping("/receive")
     @Transactional
@@ -58,7 +62,8 @@ public class BatchActionController {
                     .orElseThrow(() -> new RuntimeException("Variant not found: " + item.getVariantId()));
 
             // Determine status: INCOMING batches don't add to sellable stock yet
-            String status = request.getStatus() != null && request.getStatus().equals("INCOMING") ? "INCOMING" : "RECEIVED";
+            String status = request.getStatus() != null && request.getStatus().equals("INCOMING") ? "INCOMING"
+                    : "RECEIVED";
 
             // 2. Create StockBatch
             BigDecimal itemBaseCost = item.getBaseCost() != null ? item.getBaseCost() : BigDecimal.ZERO;
@@ -67,7 +72,7 @@ public class BatchActionController {
             batch.setVariant(variant);
             batch.setQuantity(item.getQuantity());
             // Fix: remainingQuantity should match quantity if RECEIVED, else 0 if INCOMING
-            batch.setRemainingQuantity("RECEIVED".equals(status) ? item.getQuantity() : 0); 
+            batch.setRemainingQuantity("RECEIVED".equals(status) ? item.getQuantity() : 0);
             batch.setAcquisitionPrice(itemBaseCost);
             batch.setSupplier(supplier);
             batch.setConsigned(request.isConsigned());
@@ -83,34 +88,25 @@ public class BatchActionController {
         expense.setCategory("Business");
         expense.setCost(grandTotal);
         expense.setBatchId(batchId);
-        expense.setNote("Auto-generated from Batch " + (request.getStatus() != null ? request.getStatus() : "RECEIVED") + ". Total items: " + totalItems + ".");
+        expense.setNote("Auto-generated from Batch " + (request.getStatus() != null ? request.getStatus() : "RECEIVED")
+                + ". Total items: " + totalItems + ".");
         expenseRepository.save(expense);
 
         return ResponseEntity.ok(Map.of(
-            "message", "Batch received successfully", 
-            "batchId", batchId,
-            "grandTotal", grandTotal
-        ));
+                "message", "Batch received successfully",
+                "batchId", batchId,
+                "grandTotal", grandTotal));
     }
 
     @DeleteMapping("/revert/{batchId}")
     @Transactional
     public ResponseEntity<?> revertBatch(@PathVariable String batchId) {
-        // Find expense
-        List<Expense> expenses = expenseRepository.findAll().stream()
-                .filter(e -> batchId.equals(e.getBatchId()))
-                .collect(Collectors.toList());
-        expenseRepository.deleteAll(expenses);
-
-        // Find stock batches
-        List<StockBatch> stockBatches = stockBatchRepository.findAll().stream()
-                .filter(b -> batchId.equals(b.getBatchId()))
-                .collect(Collectors.toList());
+        expenseRepository.deleteAll(expenseRepository.findByBatchId(batchId));
 
         // Stock quantity is computed via @Formula on StockBatch.remainingQuantity,
-        // so simply deleting the batch rows is enough to remove them from active inventory.
-
-        stockBatchRepository.deleteAll(stockBatches);
+        // so simply deleting the batch rows is enough to remove them from active
+        // inventory.
+        stockBatchRepository.deleteAll(stockBatchRepository.findByBatchId(batchId));
 
         return ResponseEntity.ok(Map.of("message", "Batch " + batchId + " has been reverted successfully."));
     }
@@ -128,23 +124,23 @@ public class BatchActionController {
                 .filter(e -> e.getBatchId() != null)
                 .collect(Collectors.groupingBy(Expense::getBatchId,
                         Collectors.mapping(
-                            e -> e.getCost() != null ? e.getCost() : BigDecimal.ZERO,
-                            Collectors.reducing(BigDecimal.ZERO, BigDecimal::add)
-                        )));
+                                e -> e.getCost() != null ? e.getCost() : BigDecimal.ZERO,
+                                Collectors.reducing(BigDecimal.ZERO, BigDecimal::add))));
 
         List<Map<String, Object>> result = grouped.entrySet().stream().map(entry -> {
             String batchId = entry.getKey();
             List<StockBatch> items = entry.getValue();
             StockBatch first = items.get(0);
-            
+
             BigDecimal totalExpense = expenseMap.getOrDefault(batchId, BigDecimal.ZERO);
-            
+
             // Collect item details
             List<Map<String, Object>> itemDtos = items.stream().map(item -> {
                 Map<String, Object> i = new java.util.HashMap<>();
                 i.put("variantId", item.getVariant().getId());
                 i.put("sku", item.getVariant().getSku());
-                i.put("name", item.getVariant().getProduct().getBrandName() + " " + item.getVariant().getProduct().getModelName() + " (" + item.getVariant().getColor() + ")");
+                i.put("name", item.getVariant().getProduct().getBrandName() + " "
+                        + item.getVariant().getProduct().getModelName() + " (" + item.getVariant().getColor() + ")");
                 i.put("quantity", item.getQuantity());
                 i.put("baseCost", item.getAcquisitionPrice());
                 return i;
@@ -163,12 +159,12 @@ public class BatchActionController {
             batchMap.put("items", itemDtos);
             return batchMap;
         })
-        .sorted((a, b) -> {
-            java.time.LocalDateTime dateA = (java.time.LocalDateTime) a.get("date");
-            java.time.LocalDateTime dateB = (java.time.LocalDateTime) b.get("date");
-            return dateB.compareTo(dateA);
-        })
-        .collect(Collectors.toList());
+                .sorted((a, b) -> {
+                    java.time.LocalDateTime dateA = (java.time.LocalDateTime) a.get("date");
+                    java.time.LocalDateTime dateB = (java.time.LocalDateTime) b.get("date");
+                    return dateB.compareTo(dateA);
+                })
+                .collect(Collectors.toList());
 
         return ResponseEntity.ok(result);
     }
@@ -176,29 +172,24 @@ public class BatchActionController {
     @PostMapping("/{batchId}/mark-received")
     @Transactional
     public ResponseEntity<?> markBatchReceived(@PathVariable String batchId) {
-        List<StockBatch> batches = stockBatchRepository.findAll().stream()
-                .filter(b -> batchId.equals(b.getBatchId()))
-                .collect(Collectors.toList());
-        
+        List<StockBatch> batches = stockBatchRepository.findByBatchId(batchId);
+
         boolean updated = false;
         for (StockBatch batch : batches) {
             if ("INCOMING".equals(batch.getStatus())) {
                 batch.setStatus("RECEIVED");
-                ProductVariant variant = batch.getVariant();
                 stockBatchRepository.save(batch);
                 updated = true;
             }
         }
-        
+
         if (updated) {
-            // Also update expense note
-            expenseRepository.findAll().stream()
-                .filter(e -> batchId.equals(e.getBatchId()))
-                .findFirst()
-                .ifPresent(e -> {
-                    e.setNote(e.getNote().replace("INCOMING", "RECEIVED"));
-                    expenseRepository.save(e);
-                });
+            expenseRepository.findByBatchId(batchId).stream()
+                    .findFirst()
+                    .ifPresent(e -> {
+                        e.setNote(e.getNote().replace("INCOMING", "RECEIVED"));
+                        expenseRepository.save(e);
+                    });
         }
 
         return ResponseEntity.ok(Map.of("message", "Batch marked as received."));
