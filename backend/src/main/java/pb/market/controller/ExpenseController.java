@@ -41,4 +41,16 @@ public class ExpenseController {
         expenseRepository.deleteById(id);
         return ResponseEntity.ok(Map.of("message", "Expense deleted."));
     }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<?> update(@PathVariable Long id, @RequestBody Expense expense) {
+        return expenseRepository.findById(id).map(existing -> {
+            if (expense.getName() != null) existing.setName(expense.getName());
+            if (expense.getCategory() != null) existing.setCategory(expense.getCategory());
+            if (expense.getCost() != null) existing.setCost(expense.getCost());
+            if (expense.getNote() != null) existing.setNote(expense.getNote());
+            if (expense.getType() != null) existing.setType(expense.getType());
+            return ResponseEntity.ok(expenseRepository.save(existing));
+        }).orElse(ResponseEntity.notFound().build());
+    }
 }

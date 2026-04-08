@@ -31,7 +31,22 @@ public class Transaction {
     private BigDecimal downpayment;
     private BigDecimal finalPrice; // The price you agreed on for this sale
     private BigDecimal costPrice;  // The exact cost of this item from FIFO stock batches
+    
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "supplier_id")
+    @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
+    private Supplier supplier;
+
+    private boolean consigned = false;
+
     private LocalDateTime transactionDate;
+    
+    // We store a reference to the specific batch this item was taken from,
+    // so that we can accurately return it to that same batch if the order is cancelled/deleted.
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "stock_batch_id")
+    @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
+    private StockBatch stockBatch;
 
     @PrePersist
     protected void onCreate() {

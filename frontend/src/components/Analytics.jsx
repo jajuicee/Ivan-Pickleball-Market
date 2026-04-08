@@ -260,7 +260,7 @@ const Analytics = () => {
             const tDate = new Date(t.transactionDate);
             const inDate = tDate >= cutoffDate && tDate <= toDate;
             const inPayment = paymentFilter === 'All' || t.paymentMethod === paymentFilter;
-            const isPaid = t.status !== 'UNPAID' && t.status !== 'CANCELLED';
+            const isPaid = t.status !== 'UNPAID';
             return inDate && inPayment && isPaid;
         }).map(t => {
             const selling = Number(t.finalPrice || 0);

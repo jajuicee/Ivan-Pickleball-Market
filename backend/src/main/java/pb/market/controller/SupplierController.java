@@ -8,6 +8,7 @@ import pb.market.repository.SupplierRepository;
 
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @CrossOrigin(origins = "*")
 @RestController
@@ -16,10 +17,33 @@ import java.util.Map;
 public class SupplierController {
 
     private final SupplierRepository supplierRepository;
+    private final pb.market.repository.TransactionRepository transactionRepository;
 
     @GetMapping
     public List<Supplier> getAll() {
         return supplierRepository.findAll();
+    }
+
+    @GetMapping("/reports/consignment")
+    public List<pb.market.dto.SupplierConsignmentDTO> getConsignmentReport(
+            @RequestParam("start") String startStr,
+            @RequestParam("end") String endStr) {
+        
+        java.time.LocalDateTime start = java.time.LocalDateTime.parse(startStr);
+        java.time.LocalDateTime end = java.time.LocalDateTime.parse(endStr);
+        
+        List<Supplier> suppliers = supplierRepository.findAll();
+        Map<Long, Long> counts = transactionRepository.countSoldConsignedBySupplierInRange(start, end).stream()
+                .collect(Collectors.toMap(
+                        row -> (Long) row[0],
+                        row -> (Long) row[1]
+                ));
+        
+        return suppliers.stream().map(s -> new pb.market.dto.SupplierConsignmentDTO(
+                s.getId(),
+                s.getName(),
+                counts.getOrDefault(s.getId(), 0L)
+        )).collect(Collectors.toList());
     }
 
     @PostMapping
