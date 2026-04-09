@@ -57,7 +57,9 @@ public class TransactionController {
 
         // Save the transaction
         Transaction saved = transactionRepository.save(transaction);
-        return ResponseEntity.ok(saved);
+        
+        // Reload with JOIN FETCH so lazy relations are initialized before JSON serialization
+        return ResponseEntity.ok(transactionRepository.findByIdWithDetails(saved.getId()).orElse(saved));
     }
 
 
