@@ -44,8 +44,11 @@ public class BatchActionController {
 
         Supplier supplier = null;
         if (request.getSupplierId() != null) {
-            supplier = supplierRepository.findById(request.getSupplierId())
-                    .orElseThrow(() -> new RuntimeException("Supplier not found"));
+            var supplierOpt = supplierRepository.findById(request.getSupplierId());
+            if (supplierOpt.isEmpty()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Supplier not found with id: " + request.getSupplierId()));
+            }
+            supplier = supplierOpt.get();
         }
 
         // Calculate total items
@@ -54,12 +57,18 @@ public class BatchActionController {
             return ResponseEntity.badRequest().body(Map.of("error", "Total quantity must be greater than 0."));
         }
 
+        // Validate all variant IDs before creating any batches
+        for (BatchAddRequest.BatchItem item : request.getItems()) {
+            if (!variantRepository.existsById(item.getVariantId())) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Variant not found with id: " + item.getVariantId()));
+            }
+        }
+
         BigDecimal grandTotal = request.getTotalExpense() != null ? request.getTotalExpense() : BigDecimal.ZERO;
         String batchId = UUID.randomUUID().toString();
 
         for (BatchAddRequest.BatchItem item : request.getItems()) {
-            ProductVariant variant = variantRepository.findById(item.getVariantId())
-                    .orElseThrow(() -> new RuntimeException("Variant not found: " + item.getVariantId()));
+            ProductVariant variant = variantRepository.findById(item.getVariantId()).get();
 
             // Determine status: INCOMING batches don't add to sellable stock yet
             String status = request.getStatus() != null && request.getStatus().equals("INCOMING") ? "INCOMING"
@@ -71,7 +80,7 @@ public class BatchActionController {
             StockBatch batch = new StockBatch();
             batch.setVariant(variant);
             batch.setQuantity(item.getQuantity());
-            // Fix: remainingQuantity should match quantity if RECEIVED, else 0 if INCOMING
+            // remainingQuantity: full quantity if RECEIVED, 0 if INCOMING (won't be overwritten by @PrePersist since it's non-null)
             batch.setRemainingQuantity("RECEIVED".equals(status) ? item.getQuantity() : 0);
             batch.setAcquisitionPrice(itemBaseCost);
             batch.setSupplier(supplier);

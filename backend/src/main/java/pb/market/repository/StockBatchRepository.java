@@ -22,4 +22,6 @@ public interface StockBatchRepository extends JpaRepository<StockBatch, Long> {
     List<StockBatch> findAllWithVariantAndProduct();
 
     List<StockBatch> findByBatchId(String batchId);
+
+    List<StockBatch> findBySupplierId(Long supplierId);
 }

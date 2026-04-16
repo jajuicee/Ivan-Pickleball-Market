@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import pb.market.entity.Supplier;
+import pb.market.repository.StockBatchRepository;
 import pb.market.repository.SupplierRepository;
 
 import java.util.List;
@@ -18,6 +19,7 @@ public class SupplierController {
 
     private final SupplierRepository supplierRepository;
     private final pb.market.repository.TransactionRepository transactionRepository;
+    private final StockBatchRepository stockBatchRepository;
 
     @GetMapping
     public List<Supplier> getAll() {
@@ -47,8 +49,11 @@ public class SupplierController {
     }
 
     @PostMapping
-    public Supplier create(@RequestBody Supplier supplier) {
-        return supplierRepository.save(supplier);
+    public ResponseEntity<?> create(@RequestBody Supplier supplier) {
+        if (supplier.getName() == null || supplier.getName().isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Supplier name is required."));
+        }
+        return ResponseEntity.ok(supplierRepository.save(supplier));
     }
 
     @PutMapping("/{id}")
@@ -65,6 +70,14 @@ public class SupplierController {
     public ResponseEntity<?> delete(@PathVariable Long id) {
         if (!supplierRepository.existsById(id)) {
             return ResponseEntity.notFound().build();
+        }
+        // Check if supplier is referenced by any stock batches or transactions
+        boolean hasStockBatches = !stockBatchRepository.findBySupplierId(id).isEmpty();
+        boolean hasTransactions = !transactionRepository.findBySupplierId(id).isEmpty();
+        if (hasStockBatches || hasTransactions) {
+            return ResponseEntity.badRequest().body(Map.of(
+                "error", "Cannot delete supplier: it is referenced by existing stock batches or transactions. Remove those references first."
+            ));
         }
         supplierRepository.deleteById(id);
         return ResponseEntity.ok(Map.of("message", "Supplier deleted"));

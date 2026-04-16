@@ -28,9 +28,15 @@ public class TransactionController {
     @Transactional
     @PostMapping
     public ResponseEntity<?> create(@RequestBody Transaction transaction) {
+        if (transaction.getVariant() == null || transaction.getVariant().getId() == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Variant ID is required."));
+        }
         Long variantId = transaction.getVariant().getId();
-        ProductVariant variant = variantRepository.findById(variantId)
-                .orElseThrow(() -> new RuntimeException("Variant not found"));
+        var variantOpt = variantRepository.findById(variantId);
+        if (variantOpt.isEmpty()) {
+            return ResponseEntity.status(404).body(Map.of("error", "Variant not found with id: " + variantId));
+        }
+        ProductVariant variant = variantOpt.get();
 
         if (variant.getStockQuantity() <= 0) {
             return ResponseEntity.badRequest()
@@ -100,8 +106,12 @@ public class TransactionController {
 
         List<Transaction> group;
         if (transactionId.startsWith("LEGACY-")) {
-            Long id = Long.parseLong(transactionId.replace("LEGACY-", ""));
-            group = transactionRepository.findById(id).map(List::of).orElse(Collections.emptyList());
+            try {
+                Long id = Long.parseLong(transactionId.replace("LEGACY-", ""));
+                group = transactionRepository.findById(id).map(List::of).orElse(Collections.emptyList());
+            } catch (NumberFormatException e) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Invalid transaction ID format: " + transactionId));
+            }
         } else {
             group = transactionRepository.findByTransactionId(transactionId);
         }
@@ -123,8 +133,12 @@ public class TransactionController {
     public ResponseEntity<?> cancelOrder(@PathVariable String transactionId) {
         List<Transaction> group;
         if (transactionId.startsWith("LEGACY-")) {
-            Long id = Long.parseLong(transactionId.replace("LEGACY-", ""));
-            group = transactionRepository.findById(id).map(List::of).orElse(Collections.emptyList());
+            try {
+                Long id = Long.parseLong(transactionId.replace("LEGACY-", ""));
+                group = transactionRepository.findById(id).map(List::of).orElse(Collections.emptyList());
+            } catch (NumberFormatException e) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Invalid transaction ID format: " + transactionId));
+            }
         } else {
             group = transactionRepository.findByTransactionId(transactionId);
         }
