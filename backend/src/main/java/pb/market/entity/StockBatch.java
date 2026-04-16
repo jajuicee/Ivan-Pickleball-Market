@@ -49,6 +49,8 @@ public class StockBatch {
     @PrePersist
     public void prePersist() {
         this.restockedAt = LocalDateTime.now();
-        this.remainingQuantity = this.quantity;
+        if (this.remainingQuantity == null) {
+            this.remainingQuantity = this.quantity;
+        }
     }
 }

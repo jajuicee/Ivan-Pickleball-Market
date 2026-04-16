@@ -49,6 +49,21 @@ public class ProductService {
     }
 */
 
+    public java.util.Optional<Product> findById(Long id) {
+        return productRepository.findById(id);
+    }
+
+    /** Save product fields only (no initial batch creation). Used for updates. */
+    @Transactional
+    public Product saveProductOnly(Product product) {
+        return productRepository.save(product);
+    }
+
+    @Transactional
+    public void deleteProduct(Long id) {
+        productRepository.deleteById(id);
+    }
+
     public List<Product> getAllProducts() {
         List<Product> products = productRepository.findAllWithVariants();
         if (products.isEmpty()) return products;

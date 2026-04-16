@@ -27,4 +27,8 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
            "AND t.transactionDate >= :start AND t.transactionDate <= :end " +
            "GROUP BY t.supplier.id")
     List<Object[]> countSoldConsignedBySupplierInRange(@Param("start") LocalDateTime start, @Param("end") LocalDateTime end);
+
+    List<Transaction> findBySupplierId(Long supplierId);
+
+    List<Transaction> findByVariantId(Long variantId);
 }
