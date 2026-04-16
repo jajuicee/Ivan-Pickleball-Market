@@ -57,7 +57,7 @@ public class SupplierController {
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<?> update(@PathVariable Long id, @RequestBody Supplier update) {
+    public ResponseEntity<?> update(@PathVariable("id") Long id, @RequestBody Supplier update) {
         return supplierRepository.findById(id).map(existing -> {
             existing.setName(update.getName());
             existing.setContactInfo(update.getContactInfo());
@@ -67,7 +67,7 @@ public class SupplierController {
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<?> delete(@PathVariable Long id) {
+    public ResponseEntity<?> delete(@PathVariable("id") Long id) {
         if (!supplierRepository.existsById(id)) {
             return ResponseEntity.notFound().build();
         }

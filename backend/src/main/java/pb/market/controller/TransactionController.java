@@ -78,7 +78,7 @@ public class TransactionController {
     // ── Mark a PARTIAL transaction as FULL once remaining balance is paid ─────
     @Transactional
     @PatchMapping("/{id}/complete")
-    public ResponseEntity<?> complete(@PathVariable Long id) {
+    public ResponseEntity<?> complete(@PathVariable("id") Long id) {
         Transaction t = transactionRepository.findById(id).orElse(null);
         if (t == null) {
             return ResponseEntity.notFound().build();
@@ -96,7 +96,7 @@ public class TransactionController {
     @Transactional
     @PatchMapping("/group/{transactionId}/payment")
     public ResponseEntity<?> updatePaymentMethod(
-            @PathVariable String transactionId,
+            @PathVariable("transactionId") String transactionId,
             @RequestBody Map<String, String> body) {
 
         String newMethod = body.get("paymentMethod");
@@ -130,7 +130,7 @@ public class TransactionController {
 
     @Transactional
     @PostMapping("/cancel/{transactionId}")
-    public ResponseEntity<?> cancelOrder(@PathVariable String transactionId) {
+    public ResponseEntity<?> cancelOrder(@PathVariable("transactionId") String transactionId) {
         List<Transaction> group;
         if (transactionId.startsWith("LEGACY-")) {
             try {

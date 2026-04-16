@@ -22,7 +22,7 @@ public class StockBatchController {
     /** Returns ALL batches for a variant (FIFO order) */
     @Transactional(readOnly = true)
     @GetMapping("/variant/{variantId}")
-    public ResponseEntity<?> getBatchesForVariant(@PathVariable Long variantId) {
+    public ResponseEntity<?> getBatchesForVariant(@PathVariable("variantId") Long variantId) {
         List<StockBatch> batches = stockBatchRepository.findByVariantIdOrderByConsignedAscRestockedAtAsc(variantId);
         var result = batches.stream().map(b -> {
             Map<String, Object> m = new LinkedHashMap<>();
