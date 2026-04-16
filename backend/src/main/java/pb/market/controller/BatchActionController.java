@@ -109,7 +109,7 @@ public class BatchActionController {
 
     @DeleteMapping("/revert/{batchId}")
     @Transactional
-    public ResponseEntity<?> revertBatch(@PathVariable String batchId) {
+    public ResponseEntity<?> revertBatch(@PathVariable("batchId") String batchId) {
         expenseRepository.deleteAll(expenseRepository.findByBatchId(batchId));
 
         // Stock quantity is computed via @Formula on StockBatch.remainingQuantity,
@@ -180,7 +180,7 @@ public class BatchActionController {
 
     @PostMapping("/{batchId}/mark-received")
     @Transactional
-    public ResponseEntity<?> markBatchReceived(@PathVariable String batchId) {
+    public ResponseEntity<?> markBatchReceived(@PathVariable("batchId") String batchId) {
         List<StockBatch> batches = stockBatchRepository.findByBatchId(batchId);
 
         boolean updated = false;

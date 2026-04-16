@@ -34,7 +34,7 @@ public class ExpenseController {
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<?> delete(@PathVariable Long id) {
+    public ResponseEntity<?> delete(@PathVariable("id") Long id) {
         if (!expenseRepository.existsById(id)) {
             return ResponseEntity.notFound().build();
         }
@@ -43,7 +43,7 @@ public class ExpenseController {
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<?> update(@PathVariable Long id, @RequestBody Expense expense) {
+    public ResponseEntity<?> update(@PathVariable("id") Long id, @RequestBody Expense expense) {
         return expenseRepository.findById(id).map(existing -> {
             if (expense.getName() != null) existing.setName(expense.getName());
             if (expense.getCategory() != null) existing.setCategory(expense.getCategory());

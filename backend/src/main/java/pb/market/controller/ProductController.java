@@ -56,7 +56,7 @@ public class ProductController {
 
     @PutMapping("/{id}")
     @Transactional
-    public ResponseEntity<?> update(@PathVariable Long id, @RequestBody Product update) {
+    public ResponseEntity<?> update(@PathVariable("id") Long id, @RequestBody Product update) {
         return productService.findById(id).map(existing -> {
             if (update.getBrandName() != null) existing.setBrandName(update.getBrandName());
             if (update.getModelName() != null) existing.setModelName(update.getModelName());
@@ -67,7 +67,7 @@ public class ProductController {
 
     @DeleteMapping("/{id}")
     @Transactional
-    public ResponseEntity<?> delete(@PathVariable Long id) {
+    public ResponseEntity<?> delete(@PathVariable("id") Long id) {
         var productOpt = productService.findById(id);
         if (productOpt.isEmpty()) {
             return ResponseEntity.notFound().build();
@@ -89,7 +89,7 @@ public class ProductController {
 
     @PatchMapping("/variants/{id}/add-stock")
     public ResponseEntity<Map<String, Object>> addStock(
-            @PathVariable Long id,
+            @PathVariable("id") Long id,
             @RequestParam int quantity,
             @RequestParam(required = false) BigDecimal acquisitionPrice,
             @RequestParam(required = false) Long supplierId,
@@ -105,7 +105,7 @@ public class ProductController {
 
     @PatchMapping("/variants/{id}/deduct-stock")
     public ResponseEntity<Map<String, Object>> deductStock(
-            @PathVariable Long id,
+            @PathVariable("id") Long id,
             @RequestParam int quantity) {
         try {
             ProductVariant variant = productService.deductStock(id, quantity);
