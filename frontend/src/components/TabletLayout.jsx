@@ -9,7 +9,11 @@ import {
     ClipboardList,
     Building2,
     Loader2,
-    Truck
+    Truck,
+    TrendingUp,
+    Receipt,
+    BarChart2,
+    Monitor
 } from 'lucide-react';
 
 // Main Page Components
@@ -20,10 +24,17 @@ import Inventory from './Inventory';
 import ManageInventory from './ManageInventory';
 import Suppliers from './Suppliers';
 import Supplies from './Supplies';
+import Analytics from './Analytics';
+import Expenses from './Expenses';
+import ProductSales from './ProductSales';
 
 const TabletLayout = () => {
     const location = useLocation();
     const navigate = useNavigate();
+    
+    // Determine if we are under the /tablet prefix or at the root
+    const isExplicitTabletPath = location.pathname.startsWith('/tablet');
+    const basePath = isExplicitTabletPath ? '/tablet' : '';
 
     // ─── SINGLE SHARED DATA FETCH ────────────────────────────────────────────
     const [products, setProducts] = useState([]);
@@ -46,23 +57,26 @@ const TabletLayout = () => {
     // ─────────────────────────────────────────────────────────────────────────
 
     const navItems = [
-        { name: 'New Order',    path: '/tablet/orders',           icon: ShoppingCart },
-        { name: 'History',      path: '/tablet/history',          icon: History },
-        { name: 'Add Product',  path: '/tablet/add-product',      icon: PackagePlus },
-        { name: 'Stock',        path: '/tablet/inventory',        icon: Boxes },
-        { name: 'Manage Inv.',  path: '/tablet/manage-inventory', icon: ClipboardList },
-        { name: 'Supplies',     path: '/tablet/supplies',         icon: Truck },
-        { name: 'Suppliers',    path: '/tablet/suppliers',        icon: Building2 },
+        { name: 'POS',          path: `${basePath}/orders`,           icon: ShoppingCart },
+        { name: 'History',      path: `${basePath}/history`,          icon: History },
+        { name: 'Add',          path: `${basePath}/add-product`,      icon: PackagePlus },
+        { name: 'Stock',        path: `${basePath}/inventory`,        icon: Boxes },
+        { name: 'Manage',       path: `${basePath}/manage-inventory`, icon: ClipboardList },
+        { name: 'Supplies',     path: `${basePath}/supplies`,         icon: Truck },
+        { name: 'Suppliers',    path: `${basePath}/suppliers`,        icon: Building2 },
+        { name: 'Sales',        path: `${basePath}/product-sales`,    icon: BarChart2 },
+        { name: 'Analytics',    path: `${basePath}/analytics`,        icon: TrendingUp },
+        { name: 'Expenses',     path: `${basePath}/expenses`,         icon: Receipt },
     ];
 
     const currentTab = navItems.find(item => location.pathname.startsWith(item.path))?.name || 'POS System';
 
-    // Redirect /tablet root to orders
+    // Redirect root paths to orders
     useEffect(() => {
-        if (location.pathname === '/tablet' || location.pathname === '/tablet/') {
-            navigate('/tablet/orders', { replace: true });
+        if (location.pathname === (basePath || '/') || location.pathname === (basePath ? `${basePath}/` : '/')) {
+            navigate(`${basePath}/orders`, { replace: true });
         }
-    }, [location.pathname, navigate]);
+    }, [location.pathname, navigate, basePath]);
 
     return (
         <div className="flex flex-col h-[100dvh] w-screen bg-[#F7F6F0] font-sans text-brand-black overflow-hidden relative">
@@ -91,6 +105,13 @@ const TabletLayout = () => {
                             <span className="text-xs font-bold uppercase tracking-wider text-green-800 hidden sm:inline-block">Realtime Sync Active</span>
                         </div>
                     )}
+                    <button
+                        onClick={() => navigate('/')}
+                        className="flex items-center gap-2 px-3 py-1.5 bg-stone-100 text-zinc-600 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-stone-200 transition-all border border-stone-200 active:scale-95 shadow-sm"
+                    >
+                        <Monitor size={12} />
+                        Desktop View
+                    </button>
                 </div>
             </header>
 
@@ -109,13 +130,16 @@ const TabletLayout = () => {
                         <Route path="manage-inventory" element={<ManageInventory products={products} loading={loadingProducts} refetchProducts={fetchProducts} />} />
                         <Route path="supplies"         element={<Supplies />} />
                         <Route path="suppliers"        element={<Suppliers />} />
+                        <Route path="product-sales"    element={<ProductSales products={products} />} />
+                        <Route path="analytics"        element={<Analytics />} />
+                        <Route path="expenses"         element={<Expenses />} />
                     </Routes>
                 </div>
             </main>
 
             {/* --- FIXED BOTTOM NAVIGATION --- */}
-            <nav className="fixed bottom-0 left-0 w-full bg-white/90 backdrop-blur-xl border-t border-stone-200 shadow-[0_-8px_30px_rgba(0,0,0,0.06)] z-50 pb-[env(safe-area-inset-bottom)]">
-                <div className="flex justify-around items-center px-1 py-2 max-w-3xl mx-auto">
+            <nav className="fixed bottom-0 left-0 w-full bg-white/95 backdrop-blur-xl border-t border-stone-200 shadow-[0_-8px_30px_rgba(0,0,0,0.06)] z-50 pb-[env(safe-area-inset-bottom)]">
+                <div className="flex justify-start sm:justify-around items-center px-2 py-2 w-full overflow-x-auto no-scrollbar scroll-smooth">
                     {navItems.map((item) => {
                         const Icon = item.icon;
                         const isActive = location.pathname.startsWith(item.path);
@@ -143,6 +167,13 @@ const TabletLayout = () => {
                 @keyframes pageSlideIn {
                     0%   { opacity: 0; transform: translateY(-10px); }
                     100% { opacity: 1; transform: translateY(0); }
+                }
+                .no-scrollbar::-webkit-scrollbar {
+                    display: none;
+                }
+                .no-scrollbar {
+                    -ms-overflow-style: none;
+                    scrollbar-width: none;
                 }
             `}</style>
         </div>
