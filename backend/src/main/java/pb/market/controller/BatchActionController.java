@@ -10,10 +10,12 @@ import pb.market.entity.Expense;
 import pb.market.entity.ProductVariant;
 import pb.market.entity.StockBatch;
 import pb.market.entity.Supplier;
+import pb.market.entity.Transaction;
 import pb.market.repository.ExpenseRepository;
 import pb.market.repository.StockBatchRepository;
 import pb.market.repository.SupplierRepository;
 import pb.market.repository.VariantRepository;
+import pb.market.repository.TransactionRepository;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -34,6 +36,8 @@ public class BatchActionController {
     private SupplierRepository supplierRepository;
     @Autowired
     private ExpenseRepository expenseRepository;
+    @Autowired
+    private TransactionRepository transactionRepository;
 
     @PostMapping("/receive")
     @Transactional
@@ -110,12 +114,25 @@ public class BatchActionController {
     @DeleteMapping("/revert/{batchId}")
     @Transactional
     public ResponseEntity<?> revertBatch(@PathVariable("batchId") String batchId) {
+        // 1. Find all batches in this group
+        List<StockBatch> batches = stockBatchRepository.findByBatchId(batchId);
+        if (batches.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+
+        // 2. Find any transactions referencing these batches and null them out
+        // (Prevents FK constraint violation 500 error)
+        List<Transaction> referencingTransactions = transactionRepository.findByStockBatchIn(batches);
+        for (Transaction tx : referencingTransactions) {
+            tx.setStockBatch(null);
+            transactionRepository.save(tx);
+        }
+
+        // 3. Delete linked expenses
         expenseRepository.deleteAll(expenseRepository.findByBatchId(batchId));
 
-        // Stock quantity is computed via @Formula on StockBatch.remainingQuantity,
-        // so simply deleting the batch rows is enough to remove them from active
-        // inventory.
-        stockBatchRepository.deleteAll(stockBatchRepository.findByBatchId(batchId));
+        // 4. Delete the batches
+        stockBatchRepository.deleteAll(batches);
 
         return ResponseEntity.ok(Map.of("message", "Batch " + batchId + " has been reverted successfully."));
     }
@@ -187,6 +204,7 @@ public class BatchActionController {
         for (StockBatch batch : batches) {
             if ("INCOMING".equals(batch.getStatus())) {
                 batch.setStatus("RECEIVED");
+                batch.setRemainingQuantity(batch.getQuantity());
                 stockBatchRepository.save(batch);
                 updated = true;
             }

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import { Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
+import { Routes, Route, Link, useLocation, Navigate, useNavigate } from 'react-router-dom';
 import {
     LayoutDashboard,
     PackagePlus,
@@ -13,7 +13,8 @@ import {
     ClipboardList,
     Building2,
     Truck,
-    BarChart2
+    BarChart2,
+    Tablet
 } from 'lucide-react';
 
 // Main Page Components
@@ -25,10 +26,12 @@ import Analytics from './Analytics';
 import Expenses from './Expenses';
 import ManageInventory from './ManageInventory';
 import Supplies from './Supplies';
+import Suppliers from './Suppliers';
 import ProductSales from './ProductSales';
 
 const Dashboard = () => {
     const location = useLocation();
+    const navigate = useNavigate();
 
     // ─── SINGLE SHARED DATA FETCH ────────────────────────────────────────────
     const [products, setProducts] = useState([]);
@@ -56,6 +59,7 @@ const Dashboard = () => {
         { name: 'View Inventory',  path: '/inventory',        icon: Boxes },
         { name: 'Manage Inventory',path: '/manage-inventory', icon: ClipboardList },
         { name: 'Supplies',        path: '/supplies',         icon: Truck },
+        { name: 'Suppliers',       path: '/suppliers',        icon: Building2 },
         { name: 'Product Sales',   path: '/product-sales',    icon: BarChart2 },
         { name: 'Order History',   path: '/history',          icon: History },
         { name: 'Analytics',       path: '/analytics',        icon: TrendingUp },
@@ -125,6 +129,13 @@ const Dashboard = () => {
                                 <span className="text-xs font-bold uppercase tracking-wider text-green-800">Realtime Sync Active</span>
                             </div>
                         )}
+                        <button
+                            onClick={() => navigate('/tablet')}
+                            className="flex items-center gap-2 px-4 py-2 bg-zinc-900 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-zinc-800 transition-all shadow-lg shadow-zinc-900/10 active:scale-95 border border-white/10"
+                        >
+                            <Tablet size={14} />
+                            Tablet View
+                        </button>
                     </div>
                 </header>
 
@@ -142,6 +153,7 @@ const Dashboard = () => {
                             <Route path="/inventory" element={<Inventory products={products} loading={loadingProducts} refetchProducts={fetchProducts} />} />
                             <Route path="/manage-inventory" element={<ManageInventory products={products} loading={loadingProducts} refetchProducts={fetchProducts} />} />
                             <Route path="/supplies" element={<Supplies />} />
+                            <Route path="/suppliers" element={<Suppliers />} />
                             <Route path="/product-sales" element={<ProductSales products={products} />} />
                             <Route path="/history" element={<OrderHistory />} />
                             <Route path="/analytics" element={<Analytics />} />

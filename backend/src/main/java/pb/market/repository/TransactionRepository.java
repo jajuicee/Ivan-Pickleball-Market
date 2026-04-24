@@ -31,4 +31,6 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
     List<Transaction> findBySupplierId(Long supplierId);
 
     List<Transaction> findByVariantId(Long variantId);
+    
+    List<Transaction> findByStockBatchIn(List<pb.market.entity.StockBatch> batches);
 }
