@@ -2,7 +2,8 @@ import React, { useState, useMemo } from 'react';
 import axios from 'axios';
 import {
     ShoppingCart, Search, User, CreditCard, Tag, X,
-    AlertCircle, CheckCircle, Loader2, ClipboardList, ArrowRight, Trash2
+    AlertCircle, CheckCircle, Loader2, ClipboardList, Trash2,
+    Printer, Receipt
 } from 'lucide-react';
 
 const EMPTY_FORM = {
@@ -14,6 +15,11 @@ const EMPTY_FORM = {
 const fmt = (val) =>
     val != null && val !== '' ? `₱${Number(val).toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : '—';
 
+// Ticket number is built once per cart cycle so the live preview, the review modal,
+// and the printed receipt all carry the same identifier.
+const newTicketNumber = () =>
+    'TRX-' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).substring(2, 6).toUpperCase();
+
 // Props: products (array), loading (bool), refetchProducts (fn)
 const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
     const [searchQuery, setSearchQuery]   = useState('');
@@ -22,6 +28,11 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
     const [showSummary, setShowSummary]   = useState(false);
     const [submitting, setSubmitting]     = useState(false);
     const [status, setStatus]             = useState({ type: '', message: '' });
+    const [ticketNumber, setTicketNumber] = useState(newTicketNumber);
+
+    // Print only the ticket. The @media print CSS in the JSX below hides everything
+    // outside the .pos-ticket-printable element so we don't need a popup window.
+    const handlePrintTicket = () => window.print();
 
     // ── Product search ────────────────────────────────────────────────────────
     const inventoryList = useMemo(() =>
@@ -74,6 +85,7 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
         setShowSummary(false);
         setSearchQuery('');
         setStatus({ type: '', message: '' });
+        setTicketNumber(newTicketNumber());
     };
 
     // ── Confirm ───────────────────────────────────────────────────────────────
@@ -90,8 +102,9 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
         }
 
         setSubmitting(true);
-        // Generate a shared ID for this batch!
-        const generatedTransactionId = 'TRX-' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).substring(2, 6).toUpperCase();
+        // Use the live ticket number that the cashier already sees on the POS preview
+        // so the printed receipt matches what's stored in the DB.
+        const generatedTransactionId = ticketNumber;
 
         const payloads = [];
         cart.forEach(item => {
@@ -106,7 +119,7 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
                     paymentMethod: formData.paymentMethod,
                     paymentDetails: formData.orderNote,
                     status: item.paymentStatus === 'PAID' ? 'FULL' : 'UNPAID',
-                    downpayment: 0, 
+                    downpayment: 0,
                     finalPrice: pricePerItem,
                 });
             }
@@ -141,10 +154,31 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
 
     return (
         <div className="w-full lg:h-full flex flex-col space-y-6 p-4 md:p-0">
+            {/* Print-only CSS: when the cashier hits Print, every part of the page is hidden
+                except the .pos-ticket-printable receipt, which expands to fill the page. */}
+            <style>{`
+                @media print {
+                    body * { visibility: hidden !important; }
+                    .pos-ticket-printable, .pos-ticket-printable * { visibility: visible !important; }
+                    .pos-ticket-printable {
+                        position: absolute !important;
+                        left: 0; top: 0;
+                        width: 80mm !important;
+                        max-width: 80mm !important;
+                        padding: 6mm !important;
+                        background: white !important;
+                        box-shadow: none !important;
+                        border: none !important;
+                    }
+                    .pos-ticket-no-print { display: none !important; }
+                    @page { size: 80mm auto; margin: 0; }
+                }
+            `}</style>
+
             <div className="flex-1 bg-white rounded-xl shadow-sm border border-stone-200 lg:overflow-hidden flex flex-col lg:flex-row lg:min-h-0">
 
                 {/* LEFT COLUMN: CART BUILDING */}
-                <div className="flex-1 p-4 lg:p-8 border-b lg:border-b-0 lg:border-r border-stone-200 overflow-y-auto pb-24 lg:pb-8">
+                <div className="flex-1 p-4 lg:p-8 border-b lg:border-b-0 lg:border-r border-stone-200 overflow-y-auto pb-24 lg:pb-8 pos-ticket-no-print">
                     <div className="flex items-center gap-3 mb-6">
                         <ShoppingCart className="text-zinc-600" />
                         <h2 className="text-xl font-bold text-zinc-800 uppercase tracking-wide">Multi-Item Checkout</h2>
@@ -256,8 +290,23 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
                     </div>
                 </div>
 
+                {/* MIDDLE COLUMN: POS TICKET (live receipt preview) */}
+                <div className="w-full lg:w-[340px] bg-gradient-to-b from-stone-100 to-stone-200/60 p-4 lg:p-6 border-b lg:border-b-0 lg:border-r border-stone-200 flex flex-col overflow-y-auto">
+                    <PosTicket
+                        cart={cart}
+                        cartTotal={cartTotal}
+                        amountPaid={amountPaid}
+                        amountUnpaid={amountUnpaid}
+                        ticketNumber={ticketNumber}
+                        customerName={formData.customerName}
+                        paymentMethod={formData.paymentMethod}
+                        orderNote={formData.orderNote}
+                        onPrint={handlePrintTicket}
+                    />
+                </div>
+
                 {/* RIGHT COLUMN: CUSTOMER & PAYMENT DETAILS */}
-                <div className="w-full lg:w-[400px] bg-stone-50 p-4 lg:p-8 flex flex-col overflow-y-auto pb-24 lg:pb-8">
+                <div className="w-full lg:w-[360px] bg-stone-50 p-4 lg:p-8 flex flex-col overflow-y-auto pb-24 lg:pb-8 pos-ticket-no-print">
                     <form onSubmit={(e) => { e.preventDefault(); setShowSummary(true); }} className="space-y-6 flex-1 flex flex-col">
                         
                         <div>
@@ -323,7 +372,7 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
 
             {/* ── ORDER SUMMARY MODAL ─────────────────────────────────────────────── */}
             {showSummary && (
-                <div className="fixed inset-0 bg-zinc-950/70 z-50 flex items-center justify-center p-4">
+                <div className="fixed inset-0 bg-zinc-950/70 z-50 flex items-center justify-center p-4 pos-ticket-no-print">
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
 
                         {/* Modal header */}
@@ -411,6 +460,151 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
                     </div>
                 </div>
             )}
+        </div>
+    );
+};
+
+/* ============================================================================
+ * POS Ticket — receipt-style live preview of the current cart.
+ * Mimics an 80mm thermal-printer slip: monospace font, dashed separators,
+ * right-aligned line totals, prominent grand total.
+ * Print button uses window.print(); the page-level @media print CSS in
+ * OrderPage hides everything except the .pos-ticket-printable wrapper.
+ * ========================================================================== */
+const PosTicket = ({ cart, cartTotal, amountPaid, amountUnpaid, ticketNumber, customerName, paymentMethod, orderNote, onPrint }) => {
+    const now = new Date();
+    const dateStr = now.toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' });
+    const timeStr = now.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
+    const totalItems = cart.reduce((sum, item) => sum + (parseInt(item.qty) || 0), 0);
+    const hasUnpaid = amountUnpaid > 0;
+
+    return (
+        <div className="flex flex-col h-full">
+            <div className="flex items-center justify-between mb-3 pos-ticket-no-print">
+                <h3 className="text-sm font-black text-zinc-700 uppercase tracking-wider flex items-center gap-2">
+                    <Receipt size={16} /> POS Ticket
+                </h3>
+                <button
+                    onClick={onPrint}
+                    disabled={cart.length === 0}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-900 text-white rounded-lg text-xs font-bold hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-sm"
+                    title="Print ticket"
+                >
+                    <Printer size={13} /> Print
+                </button>
+            </div>
+
+            {/* Receipt body */}
+            <div className="pos-ticket-printable bg-white rounded-xl shadow-md border border-stone-300 px-5 py-6 font-mono text-[12px] leading-relaxed text-zinc-900 flex-1 overflow-y-auto">
+                {/* Header */}
+                <div className="text-center mb-3">
+                    <div className="text-[15px] font-black tracking-wider uppercase">Cebu Pickleball Market</div>
+                    <div className="text-[10px] text-zinc-500 mt-0.5">Authorized Paddle Retailer</div>
+                </div>
+
+                <div className="border-t border-dashed border-zinc-400 my-2" />
+
+                {/* Meta */}
+                <div className="space-y-0.5 text-[11px]">
+                    <div className="flex justify-between">
+                        <span className="text-zinc-500">Ticket #</span>
+                        <span className="font-bold">{ticketNumber}</span>
+                    </div>
+                    <div className="flex justify-between">
+                        <span className="text-zinc-500">Date</span>
+                        <span>{dateStr} · {timeStr}</span>
+                    </div>
+                    <div className="flex justify-between">
+                        <span className="text-zinc-500">Customer</span>
+                        <span className={customerName ? '' : 'italic text-zinc-400'}>{customerName || '—'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                        <span className="text-zinc-500">Payment</span>
+                        <span>{paymentMethod}</span>
+                    </div>
+                </div>
+
+                <div className="border-t border-dashed border-zinc-400 my-2" />
+
+                {/* Line items */}
+                {cart.length === 0 ? (
+                    <div className="text-center text-zinc-400 italic py-8 text-[11px]">
+                        Cart is empty.<br />Add items to build the ticket.
+                    </div>
+                ) : (
+                    <div className="space-y-2">
+                        {cart.map((item, idx) => {
+                            const qty = parseInt(item.qty) || 0;
+                            const price = parseFloat(item.finalPrice) || 0;
+                            const lineTotal = qty * price;
+                            return (
+                                <div key={idx} className="text-[11px]">
+                                    <div className="font-bold leading-tight">{item.variant.brandName} {item.variant.modelName}</div>
+                                    {item.variant.color && item.variant.color !== 'N/A' && (
+                                        <div className="text-zinc-500 text-[10px]">{item.variant.color}</div>
+                                    )}
+                                    <div className="flex justify-between mt-0.5">
+                                        <span className="text-zinc-500">
+                                            {qty} × ₱{price.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                                            {item.paymentStatus === 'UNPAID' && (
+                                                <span className="ml-2 text-amber-700 font-bold">[UNPAID]</span>
+                                            )}
+                                        </span>
+                                        <span className="font-bold">₱{lineTotal.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+
+                <div className="border-t border-dashed border-zinc-400 my-2" />
+
+                {/* Totals */}
+                <div className="space-y-1 text-[11px]">
+                    <div className="flex justify-between">
+                        <span className="text-zinc-500">Items</span>
+                        <span>{totalItems}</span>
+                    </div>
+                    <div className="flex justify-between">
+                        <span className="text-zinc-500">Subtotal</span>
+                        <span>₱{cartTotal.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                </div>
+
+                <div className="border-t border-double border-zinc-700 my-2" />
+
+                <div className="flex justify-between items-baseline">
+                    <span className="text-[13px] font-black uppercase">Total</span>
+                    <span className="text-[16px] font-black">₱{cartTotal.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
+                </div>
+
+                {hasUnpaid && (
+                    <div className="mt-2 space-y-0.5">
+                        <div className="flex justify-between text-[10px] text-emerald-700 font-bold">
+                            <span>PAID NOW</span>
+                            <span>₱{amountPaid.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
+                        </div>
+                        <div className="px-2 py-1 bg-amber-50 border border-amber-300 rounded text-[10px] flex justify-between font-bold text-amber-800">
+                            <span>UNPAID BALANCE</span>
+                            <span>₱{amountUnpaid.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
+                        </div>
+                    </div>
+                )}
+
+                {orderNote && (
+                    <div className="mt-3 text-[10px] text-zinc-600 italic border-t border-dashed border-zinc-300 pt-2">
+                        Note: {orderNote}
+                    </div>
+                )}
+
+                <div className="border-t border-dashed border-zinc-400 my-3" />
+
+                <div className="text-center text-[10px] text-zinc-500 leading-snug">
+                    <div className="font-bold text-zinc-700">Thank you for your purchase!</div>
+                    <div className="mt-1">Keep this receipt for warranty &amp; returns.</div>
+                </div>
+            </div>
         </div>
     );
 };
