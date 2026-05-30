@@ -158,20 +158,72 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
                 except the .pos-ticket-printable receipt, which expands to fill the page. */}
             <style>{`
                 @media print {
-                    body * { visibility: hidden !important; }
-                    .pos-ticket-printable, .pos-ticket-printable * { visibility: visible !important; }
+                    /* Hide everything by default */
+                    body * {
+                        visibility: hidden !important;
+                    }
+                    /* Show the ticket and all its children */
+                    .pos-ticket-printable, .pos-ticket-printable * {
+                        visibility: visible !important;
+                    }
+
+                    /* Completely remove layout-blocking columns and sidebars from taking space */
+                    aside, header, .pos-ticket-no-print {
+                        display: none !important;
+                    }
+
+                    /* Prevent parent containers from clipping the ticket */
+                    html, body, #root, .App, .flex, main, .overflow-hidden, .bg-brand-cream, .bg-stone-50 {
+                        overflow: visible !important;
+                        height: auto !important;
+                        min-height: 0 !important;
+                        background: white !important;
+                        border: none !important;
+                        box-shadow: none !important;
+                        margin: 0 !important;
+                        padding: 0 !important;
+                    }
+
+                    /* Target printable container */
                     .pos-ticket-printable {
-                        position: absolute !important;
-                        left: 0; top: 0;
-                        width: 80mm !important;
-                        max-width: 80mm !important;
-                        padding: 6mm !important;
+                        position: fixed !important;
+                        left: 0 !important;
+                        top: 0 !important;
+                        width: 72mm !important;
+                        max-width: 72mm !important;
+                        height: 100mm !important;
+                        max-height: 100mm !important;
+                        padding: 3mm 4mm !important;
                         background: white !important;
                         box-shadow: none !important;
                         border: none !important;
+                        box-sizing: border-box !important;
+                        overflow: hidden !important;
+                        font-size: 9px !important;
+                        line-height: 1.25 !important;
+                        z-index: 9999999 !important;
                     }
-                    .pos-ticket-no-print { display: none !important; }
-                    @page { size: 80mm auto; margin: 0; }
+                    .pos-ticket-printable * {
+                        font-size: 9px !important;
+                        line-height: 1.25 !important;
+                    }
+                    .pos-ticket-printable .ticket-header-title {
+                        font-size: 11px !important;
+                    }
+                    .pos-ticket-printable .ticket-header-subtitle {
+                        font-size: 8px !important;
+                    }
+                    .pos-ticket-printable .ticket-divider {
+                        margin-top: 4px !important;
+                        margin-bottom: 4px !important;
+                    }
+                    .pos-ticket-printable .ticket-total-price {
+                        font-size: 12px !important;
+                    }
+                    .pos-ticket-printable .ticket-total-label {
+                        font-size: 10px !important;
+                    }
+                    @page { size: 72mm 100mm; margin: 0; }
                 }
             `}</style>
 
@@ -415,7 +467,7 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
                                 {cart.map((item, idx) => (
                                     <div key={idx} className="flex justify-between text-sm py-2 px-3 bg-stone-50 rounded border">
                                         <div className="flex-[2] truncate pr-2 font-medium text-zinc-800 flex items-center gap-2">
-                                            {item.qty}x {item.variant.brandName} {item.variant.modelName}
+                                            {item.qty}x {item.variant.displayName}
                                             {item.paymentStatus === 'UNPAID' && <span className="bg-amber-100 text-amber-800 text-[10px] uppercase font-bold px-1.5 py-0.5 rounded">UNPAID</span>}
                                         </div>
                                         <div className="font-mono text-zinc-500 text-xs mt-0.5 w-24 truncate">{item.variant.sku}</div>
@@ -498,33 +550,33 @@ const PosTicket = ({ cart, cartTotal, amountPaid, amountUnpaid, ticketNumber, cu
             <div className="pos-ticket-printable bg-white rounded-xl shadow-md border border-stone-300 px-5 py-6 font-mono text-[12px] leading-relaxed text-zinc-900 flex-1 overflow-y-auto">
                 {/* Header */}
                 <div className="text-center mb-3">
-                    <div className="text-[15px] font-black tracking-wider uppercase">Cebu Pickleball Market</div>
-                    <div className="text-[10px] text-zinc-500 mt-0.5">Authorized Paddle Retailer</div>
+                    <div className="ticket-header-title text-[15px] font-black tracking-wider uppercase">Cebu Pickleball Market</div>
+                    <div className="ticket-header-subtitle text-[10px] text-zinc-500 mt-0.5">Authorized Paddle Retailer</div>
                 </div>
 
-                <div className="border-t border-dashed border-zinc-400 my-2" />
+                <div className="ticket-divider border-t border-dashed border-zinc-400 my-2" />
 
                 {/* Meta */}
                 <div className="space-y-0.5 text-[11px]">
-                    <div className="flex justify-between">
-                        <span className="text-zinc-500">Ticket #</span>
+                    <div className="flex">
+                        <span className="text-zinc-500 w-20 shrink-0">Ticket #</span>
                         <span className="font-bold">{ticketNumber}</span>
                     </div>
-                    <div className="flex justify-between">
-                        <span className="text-zinc-500">Date</span>
+                    <div className="flex">
+                        <span className="text-zinc-500 w-20 shrink-0">Date</span>
                         <span>{dateStr} · {timeStr}</span>
                     </div>
-                    <div className="flex justify-between">
-                        <span className="text-zinc-500">Customer</span>
+                    <div className="flex">
+                        <span className="text-zinc-500 w-20 shrink-0">Customer</span>
                         <span className={customerName ? '' : 'italic text-zinc-400'}>{customerName || '—'}</span>
                     </div>
-                    <div className="flex justify-between">
-                        <span className="text-zinc-500">Payment</span>
+                    <div className="flex">
+                        <span className="text-zinc-500 w-20 shrink-0">Payment</span>
                         <span>{paymentMethod}</span>
                     </div>
                 </div>
 
-                <div className="border-t border-dashed border-zinc-400 my-2" />
+                <div className="ticket-divider border-t border-dashed border-zinc-400 my-2" />
 
                 {/* Line items */}
                 {cart.length === 0 ? (
@@ -538,19 +590,15 @@ const PosTicket = ({ cart, cartTotal, amountPaid, amountUnpaid, ticketNumber, cu
                             const price = parseFloat(item.finalPrice) || 0;
                             const lineTotal = qty * price;
                             return (
-                                <div key={idx} className="text-[11px]">
-                                    <div className="font-bold leading-tight">{item.variant.brandName} {item.variant.modelName}</div>
-                                    {item.variant.color && item.variant.color !== 'N/A' && (
-                                        <div className="text-zinc-500 text-[10px]">{item.variant.color}</div>
-                                    )}
-                                    <div className="flex justify-between mt-0.5">
-                                        <span className="text-zinc-500">
-                                            {qty} × ₱{price.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                                <div key={idx} className="text-[11px] py-0.5">
+                                    <div className="flex justify-between items-start">
+                                        <div className="flex-1 pr-2">
+                                            <span className="font-bold">{qty} × {item.variant.displayName}</span>
                                             {item.paymentStatus === 'UNPAID' && (
-                                                <span className="ml-2 text-amber-700 font-bold">[UNPAID]</span>
+                                                <span className="text-amber-700 font-bold text-[10px] block mt-0.5">[UNPAID]</span>
                                             )}
-                                        </span>
-                                        <span className="font-bold">₱{lineTotal.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
+                                        </div>
+                                        <span className="font-bold whitespace-nowrap">₱{lineTotal.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
                                     </div>
                                 </div>
                             );
@@ -558,7 +606,7 @@ const PosTicket = ({ cart, cartTotal, amountPaid, amountUnpaid, ticketNumber, cu
                     </div>
                 )}
 
-                <div className="border-t border-dashed border-zinc-400 my-2" />
+                <div className="ticket-divider border-t border-dashed border-zinc-400 my-2" />
 
                 {/* Totals */}
                 <div className="space-y-1 text-[11px]">
@@ -572,11 +620,11 @@ const PosTicket = ({ cart, cartTotal, amountPaid, amountUnpaid, ticketNumber, cu
                     </div>
                 </div>
 
-                <div className="border-t border-double border-zinc-700 my-2" />
+                <div className="ticket-divider border-t border-double border-zinc-700 my-2" />
 
                 <div className="flex justify-between items-baseline">
-                    <span className="text-[13px] font-black uppercase">Total</span>
-                    <span className="text-[16px] font-black">₱{cartTotal.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
+                    <span className="ticket-total-label text-[13px] font-black uppercase">Total</span>
+                    <span className="ticket-total-price text-[16px] font-black">₱{cartTotal.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
                 </div>
 
                 {hasUnpaid && (
@@ -593,12 +641,12 @@ const PosTicket = ({ cart, cartTotal, amountPaid, amountUnpaid, ticketNumber, cu
                 )}
 
                 {orderNote && (
-                    <div className="mt-3 text-[10px] text-zinc-600 italic border-t border-dashed border-zinc-300 pt-2">
+                    <div className="mt-3 text-[10px] text-zinc-600 italic border-t border-dashed border-zinc-300 pt-2 ticket-divider">
                         Note: {orderNote}
                     </div>
                 )}
 
-                <div className="border-t border-dashed border-zinc-400 my-3" />
+                <div className="ticket-divider border-t border-dashed border-zinc-400 my-3" />
 
                 <div className="text-center text-[10px] text-zinc-500 leading-snug">
                     <div className="font-bold text-zinc-700">Thank you for your purchase!</div>

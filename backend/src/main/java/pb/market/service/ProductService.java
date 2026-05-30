@@ -98,21 +98,36 @@ public class ProductService {
 
     @Transactional
     public Product saveProduct(Product product) {
+        // Track which variants are brand-new (no ID yet) so we only create initial
+        // batches for them — never for existing variants that already have stock.
+        java.util.Set<Long> existingVariantIds = new java.util.HashSet<>();
         if (product.getVariants() != null) {
             for (ProductVariant v : product.getVariants()) {
                 v.setProduct(product);
+                if (v.getId() != null) {
+                    existingVariantIds.add(v.getId());
+                }
             }
         }
         Product saved = productRepository.save(product);
         
-        // After saving product (and variants), create the actual batch records
+        // After saving product (and variants), create initial batch records
+        // ONLY for newly-inserted variants (ones that had no ID before the save).
         if (saved.getVariants() != null) {
             for (ProductVariant v : saved.getVariants()) {
-                if (v.getStockQuantity() != null && v.getStockQuantity() > 0) {
+                // Skip variants that already existed — they already have their own batches.
+                if (existingVariantIds.contains(v.getId())) {
+                    continue;
+                }
+                // For new variants, use acquisitionPrice from the request as initial stock
+                // (stockQuantity here would be the @Formula value which is 0 for a new variant).
+                // The frontend sends initialStock in the request; we accept it if > 0.
+                int initialQty = v.getStockQuantity() != null ? v.getStockQuantity() : 0;
+                if (initialQty > 0) {
                     StockBatch initialBatch = new StockBatch();
                     initialBatch.setVariant(v);
-                    initialBatch.setQuantity(v.getStockQuantity());
-                    initialBatch.setRemainingQuantity(v.getStockQuantity());
+                    initialBatch.setQuantity(initialQty);
+                    initialBatch.setRemainingQuantity(initialQty);
                     initialBatch.setAcquisitionPrice(v.getAcquisitionPrice());
                     initialBatch.setSupplier(v.getDefaultSupplier());
                     initialBatch.setConsigned(v.isConsigned());
