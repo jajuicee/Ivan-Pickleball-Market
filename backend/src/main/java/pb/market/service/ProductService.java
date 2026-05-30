@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pb.market.entity.*;
 import pb.market.repository.ProductRepository;
+import pb.market.repository.StockAdjustmentRepository;
 import pb.market.repository.StockBatchRepository;
 import pb.market.repository.SupplierRepository;
 import pb.market.repository.TransactionRepository;
@@ -26,6 +27,7 @@ public class ProductService {
     private final StockBatchRepository stockBatchRepository;
     private final SupplierRepository supplierRepository;
     private final TransactionRepository transactionRepository;
+    private final StockAdjustmentRepository stockAdjustmentRepository;
 
 /*
     @PostConstruct
@@ -96,21 +98,36 @@ public class ProductService {
 
     @Transactional
     public Product saveProduct(Product product) {
+        // Track which variants are brand-new (no ID yet) so we only create initial
+        // batches for them — never for existing variants that already have stock.
+        java.util.Set<Long> existingVariantIds = new java.util.HashSet<>();
         if (product.getVariants() != null) {
             for (ProductVariant v : product.getVariants()) {
                 v.setProduct(product);
+                if (v.getId() != null) {
+                    existingVariantIds.add(v.getId());
+                }
             }
         }
         Product saved = productRepository.save(product);
         
-        // After saving product (and variants), create the actual batch records
+        // After saving product (and variants), create initial batch records
+        // ONLY for newly-inserted variants (ones that had no ID before the save).
         if (saved.getVariants() != null) {
             for (ProductVariant v : saved.getVariants()) {
-                if (v.getStockQuantity() != null && v.getStockQuantity() > 0) {
+                // Skip variants that already existed — they already have their own batches.
+                if (existingVariantIds.contains(v.getId())) {
+                    continue;
+                }
+                // For new variants, use acquisitionPrice from the request as initial stock
+                // (stockQuantity here would be the @Formula value which is 0 for a new variant).
+                // The frontend sends initialStock in the request; we accept it if > 0.
+                int initialQty = v.getStockQuantity() != null ? v.getStockQuantity() : 0;
+                if (initialQty > 0) {
                     StockBatch initialBatch = new StockBatch();
                     initialBatch.setVariant(v);
-                    initialBatch.setQuantity(v.getStockQuantity());
-                    initialBatch.setRemainingQuantity(v.getStockQuantity());
+                    initialBatch.setQuantity(initialQty);
+                    initialBatch.setRemainingQuantity(initialQty);
                     initialBatch.setAcquisitionPrice(v.getAcquisitionPrice());
                     initialBatch.setSupplier(v.getDefaultSupplier());
                     initialBatch.setConsigned(v.isConsigned());
@@ -125,6 +142,9 @@ public class ProductService {
     @Transactional
     public ProductVariant addStock(Long variantId, int quantity, BigDecimal acquisitionPrice,
                                    Long supplierId, boolean consigned) {
+        if (quantity <= 0) {
+            throw new IllegalArgumentException("Quantity must be greater than zero.");
+        }
         ProductVariant variant = variantRepository.findById(variantId)
                 .orElseThrow(() -> new RuntimeException("Variant not found with id: " + variantId));
 
@@ -149,20 +169,22 @@ public class ProductService {
     }
 
     @Transactional
-    public ProductVariant deductStock(Long variantId, int quantity) {
+    public ProductVariant deductStock(Long variantId, int quantity, String reason, String note) {
+        if (quantity <= 0) {
+            throw new IllegalArgumentException("Quantity must be greater than zero.");
+        }
         ProductVariant variant = variantRepository.findById(variantId)
                 .orElseThrow(() -> new RuntimeException("Variant not found with id: " + variantId));
-        
+
         int current = variant.getStockQuantity() != null ? variant.getStockQuantity() : 0;
         if (quantity > current) {
             throw new IllegalArgumentException("Cannot deduct more than current stock (" + current + ").");
         }
-        
 
         int remainingToDeduct = quantity;
         List<StockBatch> batches = stockBatchRepository
             .findByVariantIdAndStatusAndRemainingQuantityGreaterThanOrderByConsignedAscRestockedAtAsc(variantId, "RECEIVED", 0);
-            
+
         for (StockBatch batch : batches) {
             if (remainingToDeduct <= 0) break;
             int available = batch.getRemainingQuantity() != null ? batch.getRemainingQuantity() : 0;
@@ -176,6 +198,51 @@ public class ProductService {
             stockBatchRepository.save(batch);
         }
 
+        // Persist the adjustment so the "Reason" the user picked is no longer thrown away.
+        StockAdjustment adj = new StockAdjustment();
+        adj.setVariant(variant);
+        adj.setQuantity(quantity);
+        adj.setReason(reason == null || reason.isBlank() ? "Manual Adjustment" : reason);
+        adj.setNote(note);
+        stockAdjustmentRepository.save(adj);
+
         return variantRepository.save(variant);
+    }
+
+    /** Partial edit of a variant — only non-null fields are applied. */
+    @Transactional
+    public ProductVariant updateVariant(Long variantId, ProductVariant patch) {
+        ProductVariant existing = variantRepository.findById(variantId)
+                .orElseThrow(() -> new RuntimeException("Variant not found with id: " + variantId));
+
+        if (patch.getSku() != null && !patch.getSku().isBlank()) existing.setSku(patch.getSku().trim());
+        if (patch.getColor() != null)            existing.setColor(patch.getColor());
+        if (patch.getThicknessMm() != null)      existing.setThicknessMm(patch.getThicknessMm());
+        if (patch.getShape() != null)            existing.setShape(patch.getShape());
+        if (patch.getAcquisitionPrice() != null) existing.setAcquisitionPrice(patch.getAcquisitionPrice());
+        if (patch.getSellingPrice() != null)     existing.setSellingPrice(patch.getSellingPrice());
+        if (patch.getLowStockThreshold() != null) existing.setLowStockThreshold(patch.getLowStockThreshold());
+        // Boolean is primitive, so always carries a value — only treat the request's value as authoritative
+        // when the JSON actually carried supplier or ownership info. The patch object is built from JSON
+        // so consigned will reflect the submitted value; we accept it.
+        existing.setConsigned(patch.isConsigned());
+
+        // Supplier replacement: accept null (clear) or a {id} reference
+        if (patch.getDefaultSupplier() != null && patch.getDefaultSupplier().getId() != null) {
+            Supplier s = supplierRepository.findById(patch.getDefaultSupplier().getId()).orElse(null);
+            existing.setDefaultSupplier(s);
+        }
+        return variantRepository.save(existing);
+    }
+
+    @Transactional
+    public void deleteVariant(Long variantId) {
+        ProductVariant variant = variantRepository.findById(variantId)
+                .orElseThrow(() -> new RuntimeException("Variant not found with id: " + variantId));
+        variantRepository.delete(variant);
+    }
+
+    public List<StockAdjustment> getAdjustments(Long variantId) {
+        return stockAdjustmentRepository.findByVariantIdOrderByAdjustedAtDesc(variantId);
     }
 }

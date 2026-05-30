@@ -2,7 +2,7 @@ package pb.market.controller;
 
 import pb.market.entity.Product;
 import pb.market.entity.ProductVariant;
-import pb.market.repository.VariantRepository;
+import pb.market.entity.StockAdjustment;
 import pb.market.service.ProductService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -11,6 +11,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import java.math.BigDecimal;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -20,7 +21,6 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class ProductController {
     private final ProductService productService;
-    private final VariantRepository variantRepository;
     private final pb.market.repository.TransactionRepository transactionRepository;
 
     @GetMapping
@@ -39,9 +39,13 @@ public class ProductController {
         if (product.getVariants() == null || product.getVariants().isEmpty()) {
             return ResponseEntity.badRequest().body(Map.of("error", "At least one variant is required."));
         }
+        // Auto-fill blank SKUs server-side for misc/accessory items so the client doesn't have to
+        // generate them with Math.random() (which collides). Paddle SKUs are still required from the UI.
+        String brandSlug = product.getBrandName().trim().toUpperCase().replaceAll("[^A-Z0-9]+", "");
+        if (brandSlug.length() > 6) brandSlug = brandSlug.substring(0, 6);
         for (ProductVariant v : product.getVariants()) {
             if (v.getSku() == null || v.getSku().isBlank()) {
-                return ResponseEntity.badRequest().body(Map.of("error", "Each variant must have a SKU."));
+                v.setSku(brandSlug + "-" + System.currentTimeMillis() + "-" + Math.abs(v.hashCode() % 1000));
             }
         }
         return ResponseEntity.ok(productService.saveProduct(product));
@@ -73,10 +77,10 @@ public class ProductController {
             return ResponseEntity.notFound().build();
         }
         Product product = productOpt.get();
-        // Check if any variant under this product has transactions
+        // Refuse if any variant has transactions. existsByVariantId avoids loading the full transaction list.
         if (product.getVariants() != null) {
             for (ProductVariant v : product.getVariants()) {
-                if (!transactionRepository.findByVariantId(v.getId()).isEmpty()) {
+                if (transactionRepository.existsByVariantId(v.getId())) {
                     return ResponseEntity.badRequest().body(Map.of(
                         "error", "Cannot delete product: variant '" + v.getSku() + "' has existing transactions."
                     ));
@@ -87,34 +91,87 @@ public class ProductController {
         return ResponseEntity.ok(Map.of("message", "Product deleted successfully."));
     }
 
+    // ===== Variant CRUD =====
+
+    /** Edit any subset of variant fields. Send only the keys you want to change. */
+    @PutMapping("/variants/{id}")
+    public ResponseEntity<?> updateVariant(@PathVariable("id") Long id, @RequestBody ProductVariant patch) {
+        try {
+            ProductVariant saved = productService.updateVariant(id, patch);
+            Map<String, Object> body = new HashMap<>();
+            body.put("id", saved.getId());
+            body.put("sku", saved.getSku());
+            body.put("color", saved.getColor());
+            body.put("thicknessMm", saved.getThicknessMm());
+            body.put("shape", saved.getShape());
+            body.put("acquisitionPrice", saved.getAcquisitionPrice());
+            body.put("sellingPrice", saved.getSellingPrice());
+            body.put("consigned", saved.isConsigned());
+            body.put("lowStockThreshold", saved.getLowStockThreshold());
+            body.put("message", "Variant updated successfully");
+            return ResponseEntity.ok(body);
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /** Delete a single variant. Refuses if the variant has any sales. */
+    @DeleteMapping("/variants/{id}")
+    @Transactional
+    public ResponseEntity<?> deleteVariant(@PathVariable("id") Long id) {
+        if (transactionRepository.existsByVariantId(id)) {
+            return ResponseEntity.badRequest().body(Map.of(
+                "error", "Cannot delete variant: it has existing transactions. Adjust stock or hide it instead."
+            ));
+        }
+        try {
+            productService.deleteVariant(id);
+            return ResponseEntity.ok(Map.of("message", "Variant deleted successfully."));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /** Recent manual stock adjustments for one variant (used in the View Batches modal). */
+    @GetMapping("/variants/{id}/adjustments")
+    public List<StockAdjustment> getAdjustments(@PathVariable("id") Long id) {
+        return productService.getAdjustments(id);
+    }
+
     @PatchMapping("/variants/{id}/add-stock")
-    public ResponseEntity<Map<String, Object>> addStock(
+    public ResponseEntity<?> addStock(
             @PathVariable("id") Long id,
             @RequestParam int quantity,
             @RequestParam(required = false) BigDecimal acquisitionPrice,
             @RequestParam(required = false) Long supplierId,
             @RequestParam(required = false, defaultValue = "false") boolean consigned) {
-        ProductVariant updated = productService.addStock(id, quantity, acquisitionPrice, supplierId, consigned);
-        return ResponseEntity.ok(Map.of(
-            "id", updated.getId(),
-            "sku", updated.getSku(),
-            "stockQuantity", updated.getStockQuantity(),
-            "message", "Stock updated successfully"
-        ));
+        try {
+            ProductVariant updated = productService.addStock(id, quantity, acquisitionPrice, supplierId, consigned);
+            return ResponseEntity.ok(Map.of(
+                "id", updated.getId(),
+                "sku", updated.getSku(),
+                "stockQuantity", updated.getStockQuantity(),
+                "message", "Stock updated successfully"
+            ));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
     }
 
     @PatchMapping("/variants/{id}/deduct-stock")
     public ResponseEntity<Map<String, Object>> deductStock(
             @PathVariable("id") Long id,
-            @RequestParam int quantity) {
+            @RequestParam int quantity,
+            @RequestParam(required = false) String reason,
+            @RequestParam(required = false) String note) {
         try {
-            ProductVariant variant = productService.deductStock(id, quantity);
+            ProductVariant variant = productService.deductStock(id, quantity, reason, note);
             return ResponseEntity.ok(Map.of(
-            "id", variant.getId(),
-            "sku", variant.getSku(),
-            "stockQuantity", variant.getStockQuantity(),
-            "message", "Stock deducted successfully"
-        ));
+                "id", variant.getId(),
+                "sku", variant.getSku(),
+                "stockQuantity", variant.getStockQuantity(),
+                "message", "Stock deducted successfully"
+            ));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }

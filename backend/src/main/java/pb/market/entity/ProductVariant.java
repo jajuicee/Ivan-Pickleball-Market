@@ -26,6 +26,9 @@ public class ProductVariant {
     @Formula("(SELECT COALESCE(SUM(s.remaining_quantity), 0) FROM stock_batches s WHERE s.variant_id = id AND s.status = 'RECEIVED')")
     private Integer stockQuantity;
 
+    // Below this threshold the variant is flagged as "low stock" in the UI. null = use system default.
+    private Integer lowStockThreshold;
+
     
     // Virtual fields using subqueries (formula) to count all-time additions and sales.
     // POPULATED MANUALLY IN ProductService

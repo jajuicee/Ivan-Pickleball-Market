@@ -1,11 +1,13 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import axios from 'axios';
-import { Package, X, CheckCircle, Search, Loader2, Truck, Building2 } from 'lucide-react';
+import React, { useState, useMemo, useRef } from 'react';
+import { Package, X, Search, Building2, Boxes, Coins, AlertTriangle, PackageX, Tag } from 'lucide-react';
 
-const BASE = `http://${window.location.hostname}:8080`;
+const DEFAULT_LOW_STOCK_THRESHOLD = 5;
+
+const formatPHP = (n) =>
+    new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', minimumFractionDigits: 2 }).format(Number(n) || 0);
 
 // Read-only current stock view. Stock additions and deductions are in "Manage Inventory".
-const Inventory = ({ products = [], loading = false, refetchProducts }) => {
+const Inventory = ({ products = [], loading = false }) => {
 
     // --- INFINITE SCROLL ---
     const [displayedCount, setDisplayedCount] = useState(15);
@@ -13,12 +15,15 @@ const Inventory = ({ products = [], loading = false, refetchProducts }) => {
 
     // --- TABLE FILTER ---
     const [tableFilter, setTableFilter] = useState('');
+    const [stockFilter, setStockFilter] = useState('all'); // all | low | out
 
     // --- FLATTEN DATA ---
     const flattenedInventory = useMemo(() => {
         return products.flatMap(product =>
             (product.variants || []).map(variant => {
                 const isPaddle = product.category === 'Paddles';
+                const qty = variant.stockQuantity ?? 0;
+                const threshold = variant.lowStockThreshold ?? DEFAULT_LOW_STOCK_THRESHOLD;
                 return {
                     variantId: variant.id,
                     sku: variant.sku,
@@ -26,12 +31,17 @@ const Inventory = ({ products = [], loading = false, refetchProducts }) => {
                     name: product.modelName,
                     color: (variant.color === 'N/A' || !variant.color) ? '-' : variant.color,
                     variantDetails: isPaddle ? `${variant.thicknessMm || 0}mm ${variant.shape || ''}` : '-',
-                    quantity: variant.stockQuantity ?? 0,
+                    quantity: qty,
+                    sellingPrice: variant.sellingPrice ?? 0,
+                    acquisitionPrice: variant.acquisitionPrice ?? 0,
                     totalAdded: variant.totalAdded || 0,
                     totalSold: variant.totalSold || 0,
                     consigned: variant.consigned,
                     defaultSupplier: variant.defaultSupplier,
                     category: product.category,
+                    lowStockThreshold: threshold,
+                    isLowStock: qty > 0 && qty <= threshold,
+                    isOutOfStock: qty <= 0,
                     dropdownName: isPaddle
                         ? `${product.brandName} ${product.modelName} ${variant.color || ''} ${variant.thicknessMm || 0}mm`
                         : `${product.brandName} ${product.modelName}`
@@ -40,8 +50,28 @@ const Inventory = ({ products = [], loading = false, refetchProducts }) => {
         );
     }, [products]);
 
+    // --- STATS ---
+    const stats = useMemo(() => {
+        let totalSkus = flattenedInventory.length;
+        let totalUnits = 0;
+        let value = 0;
+        let lowStock = 0;
+        let outOfStock = 0;
+        let consignedUnits = 0;
+        for (const row of flattenedInventory) {
+            totalUnits += row.quantity;
+            value += row.quantity * Number(row.sellingPrice || 0);
+            if (row.isOutOfStock) outOfStock++;
+            else if (row.isLowStock) lowStock++;
+            if (row.consigned) consignedUnits += row.quantity;
+        }
+        return { totalSkus, totalUnits, value, lowStock, outOfStock, consignedUnits };
+    }, [flattenedInventory]);
+
     const filteredInventory = useMemo(() => {
         let list = flattenedInventory;
+        if (stockFilter === 'low') list = list.filter(i => i.isLowStock);
+        else if (stockFilter === 'out') list = list.filter(i => i.isOutOfStock);
         if (!tableFilter.trim()) return list;
         const q = tableFilter.toLowerCase();
         return list.filter(item =>
@@ -50,7 +80,7 @@ const Inventory = ({ products = [], loading = false, refetchProducts }) => {
             (item.name || '').toLowerCase().includes(q) ||
             (item.dropdownName || '').toLowerCase().includes(q)
         );
-    }, [tableFilter, flattenedInventory]);
+    }, [tableFilter, stockFilter, flattenedInventory]);
 
     const searchSummary = useMemo(() => {
         if (!tableFilter.trim()) return null;
@@ -91,7 +121,6 @@ const Inventory = ({ products = [], loading = false, refetchProducts }) => {
                 </h2>
 
                 <div className="flex items-center gap-3">
-
                     <div className="relative">
                         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                             <Search size={15} className="text-zinc-400" />
@@ -113,6 +142,17 @@ const Inventory = ({ products = [], loading = false, refetchProducts }) => {
                         )}
                     </div>
                 </div>
+            </div>
+
+            {/* STAT CARDS */}
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-4 shrink-0">
+                <StatCard Icon={Boxes} label="SKUs" primary={stats.totalSkus} secondary={`${stats.totalUnits} units in stock`} loading={loading} />
+                <StatCard Icon={Coins} label="Inventory Value" primary={loading ? '—' : formatPHP(stats.value)} secondary="at selling price" accent="emerald" loading={loading} />
+                <StatCard Icon={AlertTriangle} label="Low Stock" primary={stats.lowStock} secondary={`≤ ${DEFAULT_LOW_STOCK_THRESHOLD} units (default)`} accent="amber" loading={loading}
+                    active={stockFilter === 'low'} onClick={() => { setStockFilter(stockFilter === 'low' ? 'all' : 'low'); setDisplayedCount(15); }} />
+                <StatCard Icon={PackageX} label="Out of Stock" primary={stats.outOfStock} secondary="needs reorder" accent="red" loading={loading}
+                    active={stockFilter === 'out'} onClick={() => { setStockFilter(stockFilter === 'out' ? 'all' : 'out'); setDisplayedCount(15); }} />
+                <StatCard Icon={Tag} label="Consigned Units" primary={stats.consignedUnits} secondary="of supplier stock" accent="indigo" loading={loading} />
             </div>
 
             {/* SEARCH SUMMARY */}
@@ -148,6 +188,7 @@ const Inventory = ({ products = [], loading = false, refetchProducts }) => {
                             <th className="px-5 py-4">Variant</th>
                             <th className="px-5 py-4">Supplier</th>
                             <th className="px-5 py-4">Type</th>
+                            <th className="px-5 py-4 text-right">Price</th>
                             <th className="px-5 py-4 text-right">Status / Tracking</th>
                         </tr>
                     </thead>
@@ -155,7 +196,7 @@ const Inventory = ({ products = [], loading = false, refetchProducts }) => {
                         {loading ? (
                             Array.from({ length: 6 }).map((_, i) => (
                                 <tr key={i} className="animate-pulse">
-                                    {Array.from({ length: 8 }).map((_, j) => (
+                                    {Array.from({ length: 9 }).map((_, j) => (
                                         <td key={j} className="px-5 py-4">
                                             <div className="h-4 bg-stone-200 rounded w-3/4" />
                                         </td>
@@ -185,13 +226,16 @@ const Inventory = ({ products = [], loading = false, refetchProducts }) => {
                                             : <span className="text-zinc-400 text-xs">{row.category}</span>
                                         }
                                     </td>
+                                    <td className="px-5 py-4 text-right font-bold text-emerald-700 whitespace-nowrap">
+                                        {formatPHP(row.sellingPrice)}
+                                    </td>
                                     <td className="px-5 py-4 text-right">
                                         <div className="flex flex-col items-end gap-1.5">
-                                            {/* Current stock — big & colored */}
-                                            <span className="text-base font-black leading-none text-zinc-900">
+                                            <span className={`text-base font-black leading-none flex items-center gap-2 ${row.isOutOfStock ? 'text-red-600' : row.isLowStock ? 'text-amber-600' : 'text-zinc-900'}`}>
+                                                {row.isLowStock && !row.isOutOfStock && <AlertTriangle size={14} className="text-amber-500" />}
+                                                {row.isOutOfStock && <PackageX size={14} className="text-red-500" />}
                                                 {row.quantity ?? 0} stock{(row.quantity ?? 0) !== 1 ? 's' : ''} left
                                             </span>
-                                            {/* Sold / Total sub-row */}
                                             <div className="flex items-center gap-1.5">
                                                 <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">
                                                     {row.totalSold} sold
@@ -207,14 +251,48 @@ const Inventory = ({ products = [], loading = false, refetchProducts }) => {
                             ))
                         ) : (
                             <tr>
-                                <td colSpan="8" className="px-6 py-12 text-center text-zinc-500 border-dashed border-t">
-                                    No products found in the database.
+                                <td colSpan="9" className="px-6 py-12 text-center text-zinc-500 border-dashed border-t">
+                                    No products match the current filter.
                                 </td>
                             </tr>
                         )}
                     </tbody>
                 </table>
             </div>
+        </div>
+    );
+};
+
+/* -------- Stat card subcomponent (compact variant) -------- */
+const StatCard = (props) => {
+    const { label, primary, secondary, accent = 'zinc', loading, active, onClick } = props;
+    const Icon = props.Icon;
+    const accentMap = {
+        zinc:    { ring: 'border-stone-200',  text: 'text-zinc-900',   ic: 'text-zinc-400',   bg: 'bg-stone-100',   ringA: 'ring-zinc-900' },
+        emerald: { ring: 'border-emerald-100', text: 'text-emerald-700', ic: 'text-emerald-500', bg: 'bg-emerald-50', ringA: 'ring-emerald-500' },
+        indigo:  { ring: 'border-indigo-100',  text: 'text-indigo-700',  ic: 'text-indigo-500',  bg: 'bg-indigo-50',  ringA: 'ring-indigo-500' },
+        amber:   { ring: 'border-amber-100',   text: 'text-amber-700',   ic: 'text-amber-500',   bg: 'bg-amber-50',   ringA: 'ring-amber-500' },
+        red:     { ring: 'border-red-100',     text: 'text-red-700',     ic: 'text-red-500',     bg: 'bg-red-50',     ringA: 'ring-red-500' },
+    };
+    const c = accentMap[accent] || accentMap.zinc;
+    const isClickable = !!onClick;
+    return (
+        <div
+            onClick={onClick}
+            className={`bg-white border ${c.ring} rounded-xl p-3 shadow-sm transition-all ${isClickable ? 'cursor-pointer hover:shadow-md' : ''} ${active ? `ring-2 ${c.ringA}` : ''}`}
+        >
+            <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] font-black uppercase tracking-[0.12em] text-zinc-400">{label}</span>
+                <div className={`p-1.5 rounded-md ${c.bg}`}>
+                    <Icon size={12} className={c.ic} />
+                </div>
+            </div>
+            {loading ? (
+                <div className="h-6 bg-stone-100 rounded animate-pulse w-2/3" />
+            ) : (
+                <div className={`text-lg font-black tracking-tight ${c.text} truncate`}>{primary}</div>
+            )}
+            <p className="text-[10px] font-bold text-zinc-400 mt-0.5">{secondary}</p>
         </div>
     );
 };
