@@ -1,6 +1,7 @@
 package pb.market.service;
 
 import jakarta.annotation.PostConstruct;
+import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,6 +29,7 @@ public class ProductService {
     private final SupplierRepository supplierRepository;
     private final TransactionRepository transactionRepository;
     private final StockAdjustmentRepository stockAdjustmentRepository;
+    private final EntityManager entityManager;
 
 /*
     @PostConstruct
@@ -165,7 +167,10 @@ public class ProductService {
         batch.setBatchId(UUID.randomUUID().toString()); // Fix: Add batchId so it shows in Supply History
         stockBatchRepository.save(batch);
 
-        return variantRepository.save(variant);
+        // Flush batch changes to DB and refresh variant so @Formula stockQuantity recalculates
+        entityManager.flush();
+        entityManager.refresh(variant);
+        return variant;
     }
 
     @Transactional
@@ -182,9 +187,9 @@ public class ProductService {
         }
 
         int remainingToDeduct = quantity;
+        // Use PESSIMISTIC WRITE lock to prevent concurrent deductions from the same batch rows.
         List<StockBatch> batches = stockBatchRepository
-            .findByVariantIdAndStatusAndRemainingQuantityGreaterThanOrderByConsignedAscRestockedAtAsc(variantId, "RECEIVED", 0);
-
+            .findReceivableByVariantIdForUpdate(variantId);
         for (StockBatch batch : batches) {
             if (remainingToDeduct <= 0) break;
             int available = batch.getRemainingQuantity() != null ? batch.getRemainingQuantity() : 0;
@@ -206,6 +211,9 @@ public class ProductService {
         adj.setNote(note);
         stockAdjustmentRepository.save(adj);
 
+        // Flush batch changes to DB and refresh variant so @Formula stockQuantity recalculates
+        entityManager.flush();
+        entityManager.refresh(variant);
         return variantRepository.save(variant);
     }
 

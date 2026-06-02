@@ -1,6 +1,8 @@
 package pb.market.repository;
 
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import pb.market.entity.StockBatch;
@@ -10,10 +12,25 @@ public interface StockBatchRepository extends JpaRepository<StockBatch, Long> {
     // Used by StockBatchController to display ALL batches for a variant (all statuses)
     List<StockBatch> findByVariantIdOrderByConsignedAscRestockedAtAsc(Long variantId);
 
-    List<StockBatch> findByVariantIdAndStatusAndRemainingQuantityGreaterThanOrderByConsignedAscRestockedAtAsc(Long variantId, String status, int remainingQuantity);
-    
+    // ── Read-only FIFO fetch (no lock) — used for display/reporting ──────────
+    List<StockBatch> findByVariantIdAndStatusAndRemainingQuantityGreaterThanOrderByConsignedAscRestockedAtAsc(
+            Long variantId, String status, int remainingQuantity);
+
+    // ── LOCKED FIFO fetch — use this when DEDUCTING stock to prevent overselling ──
+    // PESSIMISTIC_WRITE locks the selected rows at DB level until the transaction commits.
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT b FROM StockBatch b WHERE b.variant.id = :variantId AND b.status = 'RECEIVED' " +
+           "AND b.remainingQuantity > 0 ORDER BY b.consigned ASC, b.restockedAt ASC")
+    List<StockBatch> findReceivableByVariantIdForUpdate(@Param("variantId") Long variantId);
+
     // For refunding stock, we want the most recently RECEIVED batch (so we order by restockedAt DESC)
     List<StockBatch> findByVariantIdAndStatusOrderByRestockedAtDesc(Long variantId, String status);
+
+    // ── LOCKED restore fetch — use when RESTORING stock (cancel/refund) ──────
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT b FROM StockBatch b WHERE b.variant.id = :variantId AND b.status = 'RECEIVED' " +
+           "ORDER BY b.restockedAt DESC")
+    List<StockBatch> findByVariantIdAndStatusReceivedForUpdate(@Param("variantId") Long variantId);
 
     @Query("SELECT s.variant.id, SUM(s.quantity) FROM StockBatch s WHERE s.status = 'RECEIVED' GROUP BY s.variant.id")
     List<Object[]> sumQuantityByVariantId();

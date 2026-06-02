@@ -6,6 +6,7 @@ import {
     Pencil, AlertTriangle, PackageX, History, Save
 } from 'lucide-react';
 import BatchAddModal from './BatchAddModal';
+import PasswordModal from './PasswordModal';
 
 const BASE = `http://${window.location.hostname}:8080`;
 const DEFAULT_LOW_STOCK_THRESHOLD = 5;
@@ -46,6 +47,19 @@ const ManageInventory = ({ products = [], loading = false, refetchProducts }) =>
 
     // --- DELETE VARIANT CONFIRM ---
     const [deleteVariantConfirm, setDeleteVariantConfirm] = useState(null);
+
+    // --- PASSWORD PROTECTION ---
+    const [pendingAuthAction, setPendingAuthAction] = useState(null);
+
+    const handleAuthConfirm = () => {
+        if (!pendingAuthAction) return;
+        const { type, payload } = pendingAuthAction;
+        setPendingAuthAction(null);
+        
+        if (type === 'ADD') openAddStock(payload);
+        if (type === 'DEDUCT') setDeductModal({ variantId: payload.variantId, name: payload.dropdownName, currentQty: payload.quantity, qty: '', reason: 'Return to Supplier', note: '' });
+        if (type === 'EDIT') openEditVariant(payload);
+    };
 
     useEffect(() => {
         axios.get(`${BASE}/api/suppliers`).then(r => setSuppliers(r.data)).catch(() => {});
@@ -380,21 +394,21 @@ const ManageInventory = ({ products = [], loading = false, refetchProducts }) =>
                                             <Layers size={14} /> Batches
                                         </button>
                                         <button
-                                            onClick={() => openAddStock(row)}
+                                            onClick={() => setPendingAuthAction({ type: 'ADD', payload: row })}
                                             className="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-bold text-zinc-500 hover:text-green-700 hover:bg-green-50 rounded-lg transition-colors"
                                             title="Add Stock"
                                         >
                                             <PlusCircle size={14} /> Add
                                         </button>
                                         <button
-                                            onClick={() => setDeductModal({ variantId: row.variantId, name: row.dropdownName, currentQty: row.quantity, qty: '', reason: 'Return to Supplier', note: '' })}
+                                            onClick={() => setPendingAuthAction({ type: 'DEDUCT', payload: row })}
                                             className="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-bold text-zinc-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                                             title="Deduct Stock"
                                         >
                                             <MinusCircle size={14} /> Deduct
                                         </button>
                                         <button
-                                            onClick={() => openEditVariant(row)}
+                                            onClick={() => setPendingAuthAction({ type: 'EDIT', payload: row })}
                                             className="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-bold text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 rounded-lg transition-colors"
                                             title="Edit Variant"
                                         >
@@ -804,6 +818,15 @@ const ManageInventory = ({ products = [], loading = false, refetchProducts }) =>
                     suppliers={suppliers}
                     onClose={() => setShowBatchAdd(false)}
                     onSuccess={() => { setShowBatchAdd(false); refetchProducts?.(); }}
+                />
+            )}
+
+            {/* ===== PASSWORD PROMPT MODAL ===== */}
+            {pendingAuthAction && (
+                <PasswordModal
+                    title={`Authenticate to ${pendingAuthAction.type.toLowerCase()}`}
+                    onConfirm={handleAuthConfirm}
+                    onCancel={() => setPendingAuthAction(null)}
                 />
             )}
         </div>

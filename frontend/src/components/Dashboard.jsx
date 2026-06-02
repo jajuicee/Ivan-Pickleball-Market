@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { Routes, Route, Link, useLocation, Navigate, useNavigate } from 'react-router-dom';
+import { useStockSync } from '../useStockSync';
 import {
     LayoutDashboard,
     PackagePlus,
@@ -51,6 +52,11 @@ const Dashboard = () => {
     useEffect(() => {
         fetchProducts();
     }, [fetchProducts]);
+
+    // ─── WEBSOCKET REAL-TIME SYNC ─────────────────────────────────────────────
+    // Connects to ws://<host>:8080/ws/stock and auto-fetches whenever any device
+    // makes a stock-changing action (sale, restock, cancel, etc.)
+    const { wsConnected } = useStockSync(fetchProducts);
     // ─────────────────────────────────────────────────────────────────────────
 
     const navItems = [
@@ -123,10 +129,16 @@ const Dashboard = () => {
                                 <span className="text-xs font-bold uppercase tracking-wider text-amber-800">Syncing Data</span>
                             </div>
                         )}
-                        {!loadingProducts && (
+                        {!loadingProducts && wsConnected && (
                             <div className="flex items-center gap-2 px-3 py-1 bg-green-100 border border-green-300 rounded-full">
                                 <span className="w-2 h-2 bg-green-600 rounded-full animate-pulse shadow-[0_0_8px_rgba(22,163,74,0.8)]"></span>
-                                <span className="text-xs font-bold uppercase tracking-wider text-green-800">Realtime Sync Active</span>
+                                <span className="text-xs font-bold uppercase tracking-wider text-green-800">Live Sync Active</span>
+                            </div>
+                        )}
+                        {!loadingProducts && !wsConnected && (
+                            <div className="flex items-center gap-2 px-3 py-1 bg-red-100 border border-red-300 rounded-full">
+                                <span className="w-2 h-2 bg-red-500 rounded-full"></span>
+                                <span className="text-xs font-bold uppercase tracking-wider text-red-700">Reconnecting…</span>
                             </div>
                         )}
                         <button

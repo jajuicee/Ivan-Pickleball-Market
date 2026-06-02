@@ -1,5 +1,7 @@
 package pb.market.controller;
 
+import jakarta.persistence.EntityManager;
+import pb.market.config.StockWebSocketHandler;
 import pb.market.entity.ProductVariant;
 import pb.market.entity.StockBatch;
 import pb.market.entity.Transaction;
@@ -23,6 +25,8 @@ public class TransactionController {
     private final TransactionRepository transactionRepository;
     private final VariantRepository variantRepository;
     private final StockBatchRepository stockBatchRepository;
+    private final EntityManager entityManager;
+    private final StockWebSocketHandler stockWebSocketHandler;
 
     // ── Create a new transaction + deduct 1 from stock ───────────────────────
     @Transactional
@@ -38,34 +42,34 @@ public class TransactionController {
         }
         ProductVariant variant = variantOpt.get();
 
-        if (variant.getStockQuantity() <= 0) {
+        // Find oldest stock batch for FIFO using a PESSIMISTIC WRITE lock.
+        // This prevents two concurrent sales from both reading remainingQuantity > 0
+        // and both deducting, which would allow overselling the last unit.
+        List<StockBatch> batches = stockBatchRepository.findReceivableByVariantIdForUpdate(variantId);
+        if (batches.isEmpty()) {
+            // No sellable stock — reject the transaction
             return ResponseEntity.badRequest()
                     .body(Map.of("error", "This item is out of stock."));
         }
 
-        // Deduct stock first
-
-        // Find oldest stock batch for FIFO (ONLY RECEIVED!)
-        List<StockBatch> batches = stockBatchRepository.findByVariantIdAndStatusAndRemainingQuantityGreaterThanOrderByConsignedAscRestockedAtAsc(variantId, "RECEIVED", 0);
-        if (!batches.isEmpty()) {
-            StockBatch oldestBatch = batches.get(0);
-            oldestBatch.setRemainingQuantity(oldestBatch.getRemainingQuantity() - 1);
-            stockBatchRepository.save(oldestBatch);
-            
-            transaction.setCostPrice(oldestBatch.getAcquisitionPrice());
-            transaction.setSupplier(oldestBatch.getSupplier());
-            transaction.setConsigned(oldestBatch.isConsigned());
-            transaction.setStockBatch(oldestBatch);
-        } else {
-            // Fallback if no valid batches
-            transaction.setCostPrice(variant.getAcquisitionPrice());
-        }
+        // Deduct 1 from the oldest batch (FIFO)
+        StockBatch oldestBatch = batches.get(0);
+        oldestBatch.setRemainingQuantity(oldestBatch.getRemainingQuantity() - 1);
+        stockBatchRepository.save(oldestBatch);
+        
+        transaction.setCostPrice(oldestBatch.getAcquisitionPrice());
+        transaction.setSupplier(oldestBatch.getSupplier());
+        transaction.setConsigned(oldestBatch.isConsigned());
+        transaction.setStockBatch(oldestBatch);
 
         // Save the transaction
         Transaction saved = transactionRepository.save(transaction);
         
         // Reload with JOIN FETCH so lazy relations are initialized before JSON serialization
-        return ResponseEntity.ok(transactionRepository.findByIdWithDetails(saved.getId()).orElse(saved));
+        ResponseEntity<?> response = ResponseEntity.ok(transactionRepository.findByIdWithDetails(saved.getId()).orElse(saved));
+        // Notify all connected clients that stock has changed
+        stockWebSocketHandler.broadcastStockUpdate();
+        return response;
     }
 
 
@@ -128,6 +132,42 @@ public class TransactionController {
         return ResponseEntity.ok(Map.of("message", "Payment method updated.", "transactionId", transactionId));
     }
 
+    // ── Mark all PARTIAL/UNPAID items in a group as FULL ──────────────────────
+    @Transactional
+    @PatchMapping("/group/{transactionId}/complete")
+    public ResponseEntity<?> completeGroup(@PathVariable("transactionId") String transactionId) {
+        List<Transaction> group;
+        if (transactionId.startsWith("LEGACY-")) {
+            try {
+                Long id = Long.parseLong(transactionId.replace("LEGACY-", ""));
+                group = transactionRepository.findById(id).map(List::of).orElse(Collections.emptyList());
+            } catch (NumberFormatException e) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Invalid transaction ID format: " + transactionId));
+            }
+        } else {
+            group = transactionRepository.findByTransactionId(transactionId);
+        }
+
+        if (group.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+
+        boolean updated = false;
+        for (Transaction tx : group) {
+            if (!"FULL".equalsIgnoreCase(tx.getStatus())) {
+                tx.setStatus("FULL");
+                transactionRepository.save(tx);
+                updated = true;
+            }
+        }
+
+        if (!updated) {
+            return ResponseEntity.badRequest().body(Map.of("error", "All items are already fully paid."));
+        }
+
+        return ResponseEntity.ok(Map.of("message", "All items in the order marked as paid.", "transactionId", transactionId));
+    }
+
     @Transactional
     @PostMapping("/cancel/{transactionId}")
     public ResponseEntity<?> cancelOrder(@PathVariable("transactionId") String transactionId) {
@@ -159,8 +199,10 @@ public class TransactionController {
                 // Fallback for legacy transactions (null stockBatch): 
                 // Restore to the most recently restocked RECEIVED batch for that variant.
                 ProductVariant variant = tx.getVariant();
+                // Use a PESSIMISTIC WRITE lock so two concurrent cancels on the
+                // same variant don't both read and double-restore the same batch.
                 List<StockBatch> batches = stockBatchRepository
-                    .findByVariantIdAndStatusOrderByRestockedAtDesc(variant.getId(), "RECEIVED");
+                    .findByVariantIdAndStatusReceivedForUpdate(variant.getId());
                 if (!batches.isEmpty()) {
                     StockBatch mostRecent = batches.get(0);
                     mostRecent.setRemainingQuantity(mostRecent.getRemainingQuantity() + 1);
@@ -172,6 +214,12 @@ public class TransactionController {
             transactionRepository.delete(tx);
         }
 
+        stockWebSocketHandler.broadcastStockUpdate();
         return ResponseEntity.ok(Map.of("message", "Order completely erased and stock restored.", "transactionId", transactionId));
+    }
+
+    // ── Broadcast helper — called after order cancel to push stock refresh ────
+    private void broadcastAfterCancel() {
+        stockWebSocketHandler.broadcastStockUpdate();
     }
 }

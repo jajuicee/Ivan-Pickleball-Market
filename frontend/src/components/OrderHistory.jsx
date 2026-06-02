@@ -5,6 +5,7 @@ import {
     AlertCircle, Loader2, RefreshCw, ChevronDown, Package,
     Calendar, X, ChevronLeft, ChevronRight, Search, MessageSquare, XCircle, Pen
 } from 'lucide-react';
+import PasswordModal from './PasswordModal';
 
 const STATUS_ALL = 'ALL';
 const STATUS_FULL = 'FULL';
@@ -341,6 +342,8 @@ const OrderHistory = () => {
     const [confirmModal, setConfirmModal] = useState(null); // { group }
     // Fix #11: Toast notification state
     const [toast, setToast] = useState(null); // { message, type }
+    // PASSWORD PROTECTION
+    const [pendingAuthAction, setPendingAuthAction] = useState(null);
 
     const [searchQuery, setSearchQuery] = useState('');
     const isSearching = searchQuery.trim().length > 0;
@@ -416,13 +419,39 @@ const OrderHistory = () => {
         }
     };
 
+    const handleCompleteGroup = async (group) => {
+        setCompleting(group.orderId);
+        const unfinished = group.items.filter(i => i.status !== 'FULL');
+
+        setTransactions(prev =>
+            prev.map(t => unfinished.find(u => u.id === t.id) ? { ...t, status: 'FULL' } : t)
+        );
+
+        try {
+            await axios.patch(`http://${window.location.hostname}:8080/api/transactions/group/${group.orderId}/complete`);
+            fetchTransactions();
+            showToast(`Order #${group.displayId} fully paid.`, 'success');
+        } catch {
+            fetchTransactions();
+            setError('Network error — could not complete all payments.');
+        } finally {
+            setCompleting(null);
+        }
+    };
+
     const showToast = (message, type = 'success') => {
         setToast({ message, type });
         setTimeout(() => setToast(null), 3500);
     };
 
     const handleCancelOrder = async (group) => {
-        // Fix #10: use styled modal instead of window.confirm
+        setPendingAuthAction({ type: 'DELETE', payload: group });
+    };
+
+    const handleAuthConfirm = () => {
+        if (!pendingAuthAction) return;
+        const group = pendingAuthAction.payload;
+        setPendingAuthAction(null);
         setConfirmModal(group);
     };
 
@@ -986,8 +1015,26 @@ const OrderHistory = () => {
                                                         </button>
                                                     )}
                                                     {isUnfinished && group.items.length > 1 && (
-                                                        <div className="text-[10px] font-bold text-zinc-400 bg-stone-100 border border-stone-200 px-2 py-1 rounded text-center">
-                                                            Expand to<br/>pay items
+                                                        <div className="flex flex-col gap-1.5">
+                                                            <button
+                                                                onClick={() => handleCompleteGroup(group)}
+                                                                disabled={completing === group.orderId}
+                                                                className="flex items-center justify-center gap-1.5 px-3 py-1.5 text-white text-xs font-bold rounded-lg disabled:opacity-50 shadow-sm"
+                                                                style={{
+                                                                    backgroundColor: '#16a34a',
+                                                                    transition: 'background-color 150ms ease',
+                                                                }}
+                                                                onMouseEnter={e => e.currentTarget.style.backgroundColor = '#15803d'}
+                                                                onMouseLeave={e => e.currentTarget.style.backgroundColor = '#16a34a'}
+                                                            >
+                                                                {completing === group.orderId
+                                                                    ? <Loader2 size={12} className="animate-spin" />
+                                                                    : <CheckCircle2 size={12} />}
+                                                                All Paid
+                                                            </button>
+                                                            <div className="text-[10px] font-bold text-zinc-400 bg-stone-100 border border-stone-200 px-2 py-1 rounded text-center leading-tight">
+                                                                Or expand to<br/>pay single items
+                                                            </div>
                                                         </div>
                                                     )}
                                                     {
@@ -1105,6 +1152,15 @@ const OrderHistory = () => {
                     />
                 ) : null;
             })()}
+
+            {/* ===== PASSWORD PROMPT MODAL ===== */}
+            {pendingAuthAction && (
+                <PasswordModal
+                    title={`Authenticate to ${pendingAuthAction.type.toLowerCase()}`}
+                    onConfirm={handleAuthConfirm}
+                    onCancel={() => setPendingAuthAction(null)}
+                />
+            )}
         </div>
     );
 };
