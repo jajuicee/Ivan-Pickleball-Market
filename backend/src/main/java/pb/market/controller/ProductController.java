@@ -3,6 +3,8 @@ package pb.market.controller;
 import pb.market.entity.Product;
 import pb.market.entity.ProductVariant;
 import pb.market.entity.StockAdjustment;
+import pb.market.config.StockWebSocketHandler;
+import pb.market.repository.VariantRepository;
 import pb.market.service.ProductService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -22,6 +24,7 @@ import java.util.Map;
 public class ProductController {
     private final ProductService productService;
     private final pb.market.repository.TransactionRepository transactionRepository;
+    private final StockWebSocketHandler stockWebSocketHandler;
 
     @GetMapping
     public List<Product> getAll() {
@@ -147,6 +150,7 @@ public class ProductController {
             @RequestParam(required = false, defaultValue = "false") boolean consigned) {
         try {
             ProductVariant updated = productService.addStock(id, quantity, acquisitionPrice, supplierId, consigned);
+            stockWebSocketHandler.broadcastStockUpdate();
             return ResponseEntity.ok(Map.of(
                 "id", updated.getId(),
                 "sku", updated.getSku(),
@@ -166,6 +170,7 @@ public class ProductController {
             @RequestParam(required = false) String note) {
         try {
             ProductVariant variant = productService.deductStock(id, quantity, reason, note);
+            stockWebSocketHandler.broadcastStockUpdate();
             return ResponseEntity.ok(Map.of(
                 "id", variant.getId(),
                 "sku", variant.getSku(),

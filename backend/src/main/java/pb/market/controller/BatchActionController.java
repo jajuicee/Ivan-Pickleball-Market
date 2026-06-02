@@ -5,6 +5,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
+import pb.market.config.StockWebSocketHandler;
 import pb.market.dto.BatchAddRequest;
 import pb.market.entity.Expense;
 import pb.market.entity.ProductVariant;
@@ -38,6 +39,8 @@ public class BatchActionController {
     private ExpenseRepository expenseRepository;
     @Autowired
     private TransactionRepository transactionRepository;
+    @Autowired
+    private StockWebSocketHandler stockWebSocketHandler;
 
     @PostMapping("/receive")
     @Transactional
@@ -105,6 +108,7 @@ public class BatchActionController {
                 + ". Total items: " + totalItems + ".");
         expenseRepository.save(expense);
 
+        stockWebSocketHandler.broadcastStockUpdate();
         return ResponseEntity.ok(Map.of(
                 "message", "Batch received successfully",
                 "batchId", batchId,
@@ -120,7 +124,23 @@ public class BatchActionController {
             return ResponseEntity.notFound().build();
         }
 
-        // 2. Find any transactions referencing these batches and null them out
+        // 2. Guard: block revert if any units from this batch have already been sold.
+        //    A sold unit = remainingQuantity < quantity (the difference was sold/deducted).
+        //    We check this instead of relying on transaction references so it works even for
+        //    manual deductions (deduct-stock endpoint) not tied to a transaction record.
+        for (StockBatch batch : batches) {
+            int original = batch.getQuantity() != null ? batch.getQuantity() : 0;
+            int remaining = batch.getRemainingQuantity() != null ? batch.getRemainingQuantity() : 0;
+            int soldFromBatch = original - remaining;
+            if (soldFromBatch > 0) {
+                return ResponseEntity.badRequest().body(Map.of(
+                    "error", "Cannot revert batch: " + soldFromBatch + " unit(s) from this batch have already been sold or deducted. " +
+                              "Revert is only allowed while stock is untouched."
+                ));
+            }
+        }
+
+        // 3. Find any transactions referencing these batches and null them out
         // (Prevents FK constraint violation 500 error)
         List<Transaction> referencingTransactions = transactionRepository.findByStockBatchIn(batches);
         for (Transaction tx : referencingTransactions) {
@@ -128,12 +148,13 @@ public class BatchActionController {
             transactionRepository.save(tx);
         }
 
-        // 3. Delete linked expenses
+        // 4. Delete linked expenses
         expenseRepository.deleteAll(expenseRepository.findByBatchId(batchId));
 
-        // 4. Delete the batches
+        // 5. Delete the batches
         stockBatchRepository.deleteAll(batches);
 
+        stockWebSocketHandler.broadcastStockUpdate();
         return ResponseEntity.ok(Map.of("message", "Batch " + batchId + " has been reverted successfully."));
     }
 
@@ -217,6 +238,7 @@ public class BatchActionController {
                         e.setNote(e.getNote().replace("INCOMING", "RECEIVED"));
                         expenseRepository.save(e);
                     });
+            stockWebSocketHandler.broadcastStockUpdate();
         }
 
         return ResponseEntity.ok(Map.of("message", "Batch marked as received."));

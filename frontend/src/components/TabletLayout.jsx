@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
+import { useStockSync } from '../useStockSync';
 import {
     ShoppingCart,
     History,
@@ -54,6 +55,9 @@ const TabletLayout = () => {
     useEffect(() => {
         fetchProducts();
     }, [fetchProducts]);
+
+    // ─── WEBSOCKET REAL-TIME SYNC ─────────────────────────────────────────────
+    const { wsConnected } = useStockSync(fetchProducts);
     // ─────────────────────────────────────────────────────────────────────────
 
     const navItems = [
@@ -99,10 +103,15 @@ const TabletLayout = () => {
                             <Loader2 size={12} className="animate-spin text-amber-700" />
                             <span className="text-xs font-bold uppercase tracking-wider text-amber-800 hidden sm:inline-block">Syncing Data</span>
                         </div>
-                    ) : (
+                    ) : wsConnected ? (
                         <div className="flex items-center gap-2 px-3 py-1 bg-green-100 border border-green-300 rounded-full">
                             <span className="w-2 h-2 bg-green-600 rounded-full animate-pulse shadow-[0_0_8px_rgba(22,163,74,0.8)]"></span>
-                            <span className="text-xs font-bold uppercase tracking-wider text-green-800 hidden sm:inline-block">Realtime Sync Active</span>
+                            <span className="text-xs font-bold uppercase tracking-wider text-green-800 hidden sm:inline-block">Live Sync Active</span>
+                        </div>
+                    ) : (
+                        <div className="flex items-center gap-2 px-3 py-1 bg-red-100 border border-red-300 rounded-full">
+                            <span className="w-2 h-2 bg-red-500 rounded-full"></span>
+                            <span className="text-xs font-bold uppercase tracking-wider text-red-700 hidden sm:inline-block">Reconnecting…</span>
                         </div>
                     )}
                     <button

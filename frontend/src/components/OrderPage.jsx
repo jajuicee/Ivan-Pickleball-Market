@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import axios from 'axios';
 import {
     ShoppingCart, Search, User, CreditCard, Tag, X,
@@ -33,6 +33,11 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
     // Print only the ticket. The @media print CSS in the JSX below hides everything
     // outside the .pos-ticket-printable element so we don't need a popup window.
     const handlePrintTicket = () => window.print();
+
+    // Refetch products on mount so we always have fresh stock data
+    useEffect(() => {
+        if (refetchProducts) refetchProducts();
+    }, []);
 
     // ── Product search ────────────────────────────────────────────────────────
     const inventoryList = useMemo(() =>
