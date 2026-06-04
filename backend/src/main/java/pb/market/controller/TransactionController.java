@@ -76,7 +76,7 @@ public class TransactionController {
     // ── Get all transactions (newest first, with variant + product eagerly loaded)
     @GetMapping
     public List<Transaction> getAll() {
-        return transactionRepository.findAllWithDetails();
+        return transactionRepository.findAllWithDetails(org.springframework.data.domain.PageRequest.of(0, 1000));
     }
 
     // ── Mark a PARTIAL transaction as FULL once remaining balance is paid ─────
@@ -92,8 +92,7 @@ public class TransactionController {
         }
         t.setStatus("FULL");
         transactionRepository.save(t);
-        // Reload with JOIN FETCH so lazy relations are initialized before JSON serialization
-        return ResponseEntity.ok(transactionRepository.findByIdWithDetails(id).orElse(t));
+        return ResponseEntity.ok(Map.of("message", "Transaction marked as completed.", "transactionId", id));
     }
 
     // ── Update payment method for an entire order group ───────────────────────
@@ -168,6 +167,89 @@ public class TransactionController {
         return ResponseEntity.ok(Map.of("message", "All items in the order marked as paid.", "transactionId", transactionId));
     }
 
+    // ── Apply a lump sum partial payment across an order group ────────────────────
+    @Transactional
+    @PatchMapping("/group/{transactionId}/pay-partial")
+    public ResponseEntity<?> payPartialGroup(
+            @PathVariable("transactionId") String transactionId,
+            @RequestBody Map<String, Object> body) {
+        
+        if (!body.containsKey("amount")) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Amount is required."));
+        }
+        
+        java.math.BigDecimal amount;
+        try {
+            amount = new java.math.BigDecimal(body.get("amount").toString());
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Invalid amount format."));
+        }
+
+        if (amount.compareTo(java.math.BigDecimal.ZERO) <= 0) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Amount must be greater than zero."));
+        }
+
+        List<Transaction> group;
+        if (transactionId.startsWith("LEGACY-")) {
+            try {
+                Long id = Long.parseLong(transactionId.replace("LEGACY-", ""));
+                group = transactionRepository.findById(id).map(List::of).orElse(Collections.emptyList());
+            } catch (NumberFormatException e) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Invalid transaction ID format."));
+            }
+        } else {
+            group = transactionRepository.findByTransactionId(transactionId);
+        }
+
+        if (group.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+
+        java.math.BigDecimal remainingPayment = amount;
+        boolean updated = false;
+
+        for (Transaction tx : group) {
+            if ("FULL".equalsIgnoreCase(tx.getStatus())) {
+                continue;
+            }
+
+            java.math.BigDecimal finalPrice = tx.getFinalPrice() != null ? tx.getFinalPrice() : java.math.BigDecimal.ZERO;
+            java.math.BigDecimal downpayment = tx.getDownpayment() != null ? tx.getDownpayment() : java.math.BigDecimal.ZERO;
+            java.math.BigDecimal balance = finalPrice.subtract(downpayment);
+
+            if (balance.compareTo(java.math.BigDecimal.ZERO) <= 0) {
+                tx.setStatus("FULL");
+                transactionRepository.save(tx);
+                continue;
+            }
+
+            if (remainingPayment.compareTo(java.math.BigDecimal.ZERO) <= 0) {
+                break; // Payment amount exhausted
+            }
+
+            if (remainingPayment.compareTo(balance) >= 0) {
+                // Fully pay this item
+                tx.setDownpayment(finalPrice);
+                tx.setStatus("FULL");
+                remainingPayment = remainingPayment.subtract(balance);
+                updated = true;
+            } else {
+                // Partially pay this item
+                tx.setDownpayment(downpayment.add(remainingPayment));
+                tx.setStatus("PARTIAL");
+                remainingPayment = java.math.BigDecimal.ZERO;
+                updated = true;
+            }
+            transactionRepository.save(tx);
+        }
+
+        if (!updated) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Order is already fully paid or no balance to pay."));
+        }
+
+        return ResponseEntity.ok(Map.of("message", "Payment applied successfully.", "transactionId", transactionId));
+    }
+
     @Transactional
     @PostMapping("/cancel/{transactionId}")
     public ResponseEntity<?> cancelOrder(@PathVariable("transactionId") String transactionId) {
@@ -233,4 +315,4 @@ public class TransactionController {
     private void broadcastAfterCancel() {
         stockWebSocketHandler.broadcastStockUpdate();
     }
-}
+}

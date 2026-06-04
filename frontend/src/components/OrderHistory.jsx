@@ -342,6 +342,9 @@ const OrderHistory = () => {
     const [confirmModal, setConfirmModal] = useState(null); // { group }
     // Fix #11: Toast notification state
     const [toast, setToast] = useState(null); // { message, type }
+    // Partial Group Payment
+    const [payingBalanceGroup, setPayingBalanceGroup] = useState(null);
+    const [paymentAmountInput, setPaymentAmountInput] = useState('');
     // PASSWORD PROTECTION
     const [pendingAuthAction, setPendingAuthAction] = useState(null);
 
@@ -414,6 +417,30 @@ const OrderHistory = () => {
                 prev.map(t => t.id === item.id ? { ...t, status: item.status } : t)
             );
             setError('Network error — could not save payment completion.');
+        } finally {
+            setCompleting(null);
+        }
+    };
+
+    const handlePayPartialSubmit = async (e) => {
+        e.preventDefault();
+        const group = payingBalanceGroup;
+        const amount = parseFloat(paymentAmountInput);
+        if (isNaN(amount) || amount <= 0) {
+            setError("Please enter a valid amount greater than zero.");
+            return;
+        }
+
+        setPayingBalanceGroup(null);
+        setCompleting(group.orderId);
+
+        try {
+            await axios.patch(`http://${window.location.hostname}:8080/api/transactions/group/${group.orderId}/pay-partial`, { amount });
+            fetchTransactions();
+            showToast(`Applied ₱${amount.toFixed(2)} to Order #${group.displayId}.`, 'success');
+        } catch {
+            fetchTransactions();
+            setError('Network error — could not apply payment.');
         } finally {
             setCompleting(null);
         }
@@ -1032,9 +1059,17 @@ const OrderHistory = () => {
                                                                     : <CheckCircle2 size={12} />}
                                                                 All Paid
                                                             </button>
-                                                            <div className="text-[10px] font-bold text-zinc-400 bg-stone-100 border border-stone-200 px-2 py-1 rounded text-center leading-tight">
-                                                                Or expand to<br/>pay single items
-                                                            </div>
+                                                            <button
+                                                                onClick={() => {
+                                                                    setPayingBalanceGroup(group);
+                                                                    const remaining = group.items.reduce((sum, item) => sum + (item.finalPrice - (item.downpayment || 0)), 0);
+                                                                    setPaymentAmountInput(remaining.toString());
+                                                                }}
+                                                                disabled={completing === group.orderId}
+                                                                className="flex items-center justify-center gap-1.5 px-3 py-1 text-blue-600 text-[11px] font-bold rounded-md hover:bg-blue-50 border border-blue-200 transition-colors"
+                                                            >
+                                                                Pay Amount
+                                                            </button>
                                                         </div>
                                                     )}
                                                     {
@@ -1152,6 +1187,74 @@ const OrderHistory = () => {
                     />
                 ) : null;
             })()}
+
+            {/* ===== PARTIAL PAYMENT MODAL ===== */}
+            {payingBalanceGroup && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden flex flex-col transform transition-all animate-in zoom-in-95 duration-200">
+                        <div className="p-4 bg-stone-50 border-b border-stone-100 flex items-center justify-between">
+                            <h3 className="font-bold text-stone-800 flex items-center gap-2">
+                                <CreditCard size={18} className="text-blue-500" />
+                                Pay Amount
+                            </h3>
+                            <button
+                                onClick={() => setPayingBalanceGroup(null)}
+                                className="p-1 hover:bg-stone-200 rounded-full text-stone-400 transition-colors"
+                            >
+                                <X size={16} />
+                            </button>
+                        </div>
+                        <form onSubmit={handlePayPartialSubmit} className="p-5 flex flex-col gap-4">
+                            <div className="flex flex-col gap-1.5">
+                                <label className="text-xs font-bold text-stone-500 uppercase tracking-wider">
+                                    Order #{payingBalanceGroup.displayId}
+                                </label>
+                                <div className="text-xs text-stone-500">
+                                    Total remaining balance: <span className="font-bold text-stone-800">₱{
+                                        payingBalanceGroup.items.reduce((sum, item) => sum + (item.finalPrice - (item.downpayment || 0)), 0).toLocaleString('en-PH', {minimumFractionDigits: 2})
+                                    }</span>
+                                </div>
+                            </div>
+                            
+                            <div className="flex flex-col gap-2">
+                                <label className="text-sm font-semibold text-stone-700">
+                                    Amount Paid
+                                </label>
+                                <div className="relative">
+                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400 font-bold">₱</span>
+                                    <input
+                                        type="number"
+                                        step="0.01"
+                                        min="0.01"
+                                        required
+                                        autoFocus
+                                        value={paymentAmountInput}
+                                        onChange={e => setPaymentAmountInput(e.target.value)}
+                                        className="w-full pl-8 pr-3 py-2.5 border-2 border-stone-200 rounded-xl focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all font-bold text-lg text-stone-800"
+                                        placeholder="0.00"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 mt-2 pt-4 border-t border-stone-100">
+                                <button
+                                    type="button"
+                                    onClick={() => setPayingBalanceGroup(null)}
+                                    className="flex-1 py-2.5 text-sm font-bold text-stone-600 bg-stone-100 hover:bg-stone-200 rounded-xl transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    className="flex-1 py-2.5 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-colors shadow-sm"
+                                >
+                                    Submit
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
 
             {/* ===== PASSWORD PROMPT MODAL ===== */}
             {pendingAuthAction && (
