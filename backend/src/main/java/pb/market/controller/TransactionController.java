@@ -76,7 +76,7 @@ public class TransactionController {
     // ── Get all transactions (newest first, with variant + product eagerly loaded)
     @GetMapping
     public List<Transaction> getAll() {
-        return transactionRepository.findAllWithDetails();
+        return transactionRepository.findAllWithDetails(org.springframework.data.domain.PageRequest.of(0, 1000));
     }
 
     // ── Mark a PARTIAL transaction as FULL once remaining balance is paid ─────

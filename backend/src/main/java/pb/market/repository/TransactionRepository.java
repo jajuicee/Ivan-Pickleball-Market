@@ -12,7 +12,7 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
     // Eager-load variant + product + defaultSupplier in one SQL trip, newest first
     // LEFT JOIN FETCH on defaultSupplier prevents LazyInitializationException (open-in-view=false)
     @Query("SELECT t FROM Transaction t JOIN FETCH t.variant v JOIN FETCH v.product LEFT JOIN FETCH v.defaultSupplier LEFT JOIN FETCH t.supplier LEFT JOIN FETCH t.stockBatch ORDER BY t.transactionDate DESC")
-    List<Transaction> findAllWithDetails();
+    List<Transaction> findAllWithDetails(org.springframework.data.domain.Pageable pageable);
 
     @Query("SELECT t.variant.id, COUNT(t) FROM Transaction t WHERE t.status != 'UNPAID' GROUP BY t.variant.id")
     List<Object[]> countByVariantId();
