@@ -261,7 +261,8 @@ const Analytics = () => {
             const inDate = tDate >= cutoffDate && tDate <= toDate;
             const inPayment = paymentFilter === 'All' || t.paymentMethod === paymentFilter;
             const isPaid = t.status !== 'UNPAID';
-            return inDate && inPayment && isPaid;
+            const isRegular = t.transactionType !== 'CONSIGNMENT';
+            return inDate && inPayment && isPaid && isRegular;
         }).map(t => {
             const selling = t.status === 'PARTIAL' ? Number(t.downpayment || 0) : Number(t.finalPrice || 0);
             const cost = Number(t.costPrice || t.variant?.acquisitionPrice || 0);

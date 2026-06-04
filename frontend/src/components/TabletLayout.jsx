@@ -14,7 +14,8 @@ import {
     TrendingUp,
     Receipt,
     BarChart2,
-    Monitor
+    Monitor,
+    Users
 } from 'lucide-react';
 
 // Main Page Components
@@ -28,6 +29,7 @@ import Supplies from './Supplies';
 import Analytics from './Analytics';
 import Expenses from './Expenses';
 import ProductSales from './ProductSales';
+import ConsigneesPage from './ConsigneesPage';
 
 const TabletLayout = () => {
     const location = useLocation();
@@ -63,6 +65,7 @@ const TabletLayout = () => {
     const navItems = [
         { name: 'POS',          path: `${basePath}/orders`,           icon: ShoppingCart },
         { name: 'History',      path: `${basePath}/history`,          icon: History },
+        { name: 'Consignees',   path: `${basePath}/consignees`,       icon: Users },
         { name: 'Add',          path: `${basePath}/add-product`,      icon: PackagePlus },
         { name: 'Stock',        path: `${basePath}/inventory`,        icon: Boxes },
         { name: 'Manage',       path: `${basePath}/manage-inventory`, icon: ClipboardList },
@@ -134,6 +137,7 @@ const TabletLayout = () => {
                     <Routes>
                         <Route path="orders"           element={<OrderPage products={products} loading={loadingProducts} refetchProducts={fetchProducts} />} />
                         <Route path="history"          element={<OrderHistory />} />
+                        <Route path="consignees"       element={<ConsigneesPage />} />
                         <Route path="add-product"      element={<AddProduct onProductAdded={fetchProducts} />} />
                         <Route path="inventory"        element={<Inventory products={products} loading={loadingProducts} refetchProducts={fetchProducts} />} />
                         <Route path="manage-inventory" element={<ManageInventory products={products} loading={loadingProducts} refetchProducts={fetchProducts} />} />

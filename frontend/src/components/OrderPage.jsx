@@ -30,14 +30,44 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
     const [status, setStatus]             = useState({ type: '', message: '' });
     const [ticketNumber, setTicketNumber] = useState(newTicketNumber);
 
+    // Consignment additions
+    const [orderMode, setOrderMode]       = useState('REGULAR'); // REGULAR or CONSIGNMENT
+    const [consignees, setConsignees]     = useState([]);
+    const [selectedConsigneeId, setSelectedConsigneeId] = useState('');
+    const [showAddConsignee, setShowAddConsignee] = useState(false);
+    const [newConsigneeName, setNewConsigneeName] = useState('');
+
     // Print only the ticket. The @media print CSS in the JSX below hides everything
     // outside the .pos-ticket-printable element so we don't need a popup window.
     const handlePrintTicket = () => window.print();
 
+    const fetchConsignees = async () => {
+        try {
+            const res = await axios.get(`http://${window.location.hostname}:8080/api/consignees`);
+            setConsignees(res.data);
+        } catch {
+            console.error('Failed to fetch consignees');
+        }
+    };
+
     // Refetch products on mount so we always have fresh stock data
     useEffect(() => {
         if (refetchProducts) refetchProducts();
+        fetchConsignees();
     }, []);
+
+    const handleAddConsignee = async () => {
+        if (!newConsigneeName.trim()) return;
+        try {
+            const res = await axios.post(`http://${window.location.hostname}:8080/api/consignees`, { name: newConsigneeName });
+            setConsignees([...consignees, res.data]);
+            setSelectedConsigneeId(res.data.id.toString());
+            setShowAddConsignee(false);
+            setNewConsigneeName('');
+        } catch {
+            alert('Error adding consignee');
+        }
+    };
 
     // ── Product search ────────────────────────────────────────────────────────
     const inventoryList = useMemo(() =>
@@ -91,6 +121,10 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
         setSearchQuery('');
         setStatus({ type: '', message: '' });
         setTicketNumber(newTicketNumber());
+        setOrderMode('REGULAR');
+        setSelectedConsigneeId('');
+        setShowAddConsignee(false);
+        setNewConsigneeName('');
     };
 
     // ── Confirm ───────────────────────────────────────────────────────────────
@@ -120,12 +154,16 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
                 payloads.push({
                     transactionId: generatedTransactionId,
                     variant: { id: item.variant.id },
-                    customerName: formData.customerName,
+                    customerName: orderMode === 'CONSIGNMENT'
+                        ? (consignees.find(c => c.id.toString() === selectedConsigneeId)?.name || '')
+                        : formData.customerName,
                     paymentMethod: formData.paymentMethod,
                     paymentDetails: formData.orderNote,
                     status: item.paymentStatus === 'PAID' ? 'FULL' : 'UNPAID',
                     downpayment: 0,
                     finalPrice: pricePerItem,
+                    transactionType: orderMode,
+                    consignee: orderMode === 'CONSIGNMENT' && selectedConsigneeId ? { id: parseInt(selectedConsigneeId) } : null
                 });
             }
         });
@@ -355,7 +393,7 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
                         amountPaid={amountPaid}
                         amountUnpaid={amountUnpaid}
                         ticketNumber={ticketNumber}
-                        customerName={formData.customerName}
+                        customerName={orderMode === 'REGULAR' ? formData.customerName : consignees.find(c => c.id.toString() === selectedConsigneeId)?.name || 'Consignee'}
                         paymentMethod={formData.paymentMethod}
                         orderNote={formData.orderNote}
                         onPrint={handlePrintTicket}
@@ -366,15 +404,54 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
                 <div className="w-full lg:w-[360px] bg-stone-50 p-4 lg:p-8 flex flex-col overflow-y-auto pb-24 lg:pb-8 pos-ticket-no-print">
                     <form onSubmit={(e) => { e.preventDefault(); setShowSummary(true); }} className="space-y-6 flex-1 flex flex-col">
                         
-                        <div>
-                            <label className="block text-sm font-bold text-zinc-700 mb-2 flex items-center gap-2">
-                                <User size={16} /> Customer Name
-                            </label>
-                            <input type="text" required value={formData.customerName}
-                                onChange={e => setFormData({ ...formData, customerName: e.target.value })}
-                                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-zinc-950 outline-none"
-                                placeholder="e.g. Juan dela Cruz" />
+                        {/* MODE TOGGLE */}
+                        <div className="flex bg-stone-200 p-1 rounded-xl w-full">
+                            <button type="button" onClick={() => setOrderMode('REGULAR')}
+                                className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${orderMode === 'REGULAR' ? 'bg-white shadow text-zinc-900' : 'text-zinc-500 hover:text-zinc-700'}`}>
+                                Regular Sale
+                            </button>
+                            <button type="button" onClick={() => setOrderMode('CONSIGNMENT')}
+                                className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${orderMode === 'CONSIGNMENT' ? 'bg-white shadow text-zinc-900' : 'text-zinc-500 hover:text-zinc-700'}`}>
+                                Consignment
+                            </button>
                         </div>
+
+                        {orderMode === 'REGULAR' ? (
+                            <div>
+                                <label className="block text-sm font-bold text-zinc-700 mb-2 flex items-center gap-2">
+                                    <User size={16} /> Customer Name
+                                </label>
+                                <input type="text" required value={formData.customerName}
+                                    onChange={e => setFormData({ ...formData, customerName: e.target.value })}
+                                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-zinc-950 outline-none"
+                                    placeholder="e.g. Juan dela Cruz" />
+                            </div>
+                        ) : (
+                            <div className="space-y-3">
+                                <div>
+                                    <label className="block text-sm font-bold text-zinc-700 mb-2 flex items-center gap-2">
+                                        <User size={16} /> Select Consignee
+                                    </label>
+                                    <select required value={selectedConsigneeId} onChange={e => setSelectedConsigneeId(e.target.value)}
+                                        className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-zinc-950 outline-none bg-white">
+                                        <option value="" disabled>-- Choose a Consignee --</option>
+                                        {consignees.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                    </select>
+                                </div>
+                                {!showAddConsignee ? (
+                                    <button type="button" onClick={() => setShowAddConsignee(true)} className="text-xs font-bold text-blue-600 hover:underline">
+                                        + Add New Consignee
+                                    </button>
+                                ) : (
+                                    <div className="flex items-center gap-2 bg-white p-2 rounded border border-stone-200">
+                                        <input type="text" value={newConsigneeName} onChange={e => setNewConsigneeName(e.target.value)}
+                                            className="flex-1 px-2 py-1 text-sm border rounded" placeholder="New Consignee Name..." />
+                                        <button type="button" onClick={handleAddConsignee} className="px-3 py-1 bg-zinc-950 text-white text-xs rounded font-bold">Add</button>
+                                        <button type="button" onClick={() => setShowAddConsignee(false)} className="px-2 py-1 bg-stone-200 text-xs rounded"><X size={14}/></button>
+                                    </div>
+                                )}
+                            </div>
+                        )}
 
                         <div>
                             <label className="block text-sm font-bold text-zinc-700 mb-2 flex items-center gap-2">
@@ -416,7 +493,7 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
 
                             <button type="submit" disabled={
                                 cart.length === 0 || 
-                                !formData.customerName
+                                (orderMode === 'REGULAR' ? !formData.customerName : !selectedConsigneeId)
                             }
                                 className="w-full bg-zinc-950 text-white px-8 py-4 mt-4 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-zinc-800 disabled:bg-stone-300 disabled:cursor-not-allowed transition-all text-lg shadow-md">
                                 <ClipboardList size={20} /> Review Order
@@ -447,8 +524,10 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
                         <div className="p-6 overflow-y-auto">
                             <div className="mb-6 space-y-2 text-sm border-b pb-4">
                                 <div className="flex justify-between">
-                                    <span className="text-zinc-500 font-medium">Customer</span>
-                                    <span className="font-bold text-zinc-900">{formData.customerName}</span>
+                                    <span className="text-zinc-500 font-medium">{orderMode === 'REGULAR' ? 'Customer' : 'Consignee'}</span>
+                                    <span className="font-bold text-zinc-900">
+                                        {orderMode === 'REGULAR' ? formData.customerName : consignees.find(c => c.id.toString() === selectedConsigneeId)?.name}
+                                    </span>
                                 </div>
                                 <div className="flex justify-between items-start">
                                     <span className="text-zinc-500 font-medium mt-1">Payment Method</span>

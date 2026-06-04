@@ -537,6 +537,7 @@ const OrderHistory = () => {
                     orderId: key,
                     displayId: t.transactionId ? String(t.transactionId).split('-')[1].substring(0, 6) : String(t.id).padStart(4, '0'),
                     customerName: t.customerName,
+                    transactionType: t.transactionType,
                     paymentMethod: t.paymentMethod,
                     paymentDetails: t.paymentDetails,
                     status: t.status,
@@ -963,7 +964,14 @@ const OrderHistory = () => {
                                                 #{group.displayId}
                                             </td>
                                             <td className="px-5 py-4 font-medium text-zinc-800">
-                                                {group.customerName}
+                                                <div className="flex items-center gap-2">
+                                                    <span>{group.customerName}</span>
+                                                    {group.transactionType === 'CONSIGNMENT' && (
+                                                        <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-purple-100 text-purple-700">
+                                                            CONSIGNMENT
+                                                        </span>
+                                                    )}
+                                                </div>
                                             </td>
                                             <td className="px-5 py-4 text-zinc-700">
                                                 {group.items.length === 1 && group.items[0].variant?.product ? (

@@ -8,6 +8,8 @@ import pb.market.entity.Transaction;
 import pb.market.repository.StockBatchRepository;
 import pb.market.repository.TransactionRepository;
 import pb.market.repository.VariantRepository;
+import pb.market.repository.ConsigneeRepository;
+import pb.market.entity.Consignee;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,6 +29,7 @@ public class TransactionController {
     private final StockBatchRepository stockBatchRepository;
     private final EntityManager entityManager;
     private final StockWebSocketHandler stockWebSocketHandler;
+    private final ConsigneeRepository consigneeRepository;
 
     // ── Create a new transaction + deduct 1 from stock ───────────────────────
     @Transactional
@@ -61,6 +64,11 @@ public class TransactionController {
         transaction.setSupplier(oldestBatch.getSupplier());
         transaction.setConsigned(oldestBatch.isConsigned());
         transaction.setStockBatch(oldestBatch);
+
+        if ("CONSIGNMENT".equals(transaction.getTransactionType()) && transaction.getConsignee() != null && transaction.getConsignee().getId() != null) {
+            Consignee consignee = consigneeRepository.findById(transaction.getConsignee().getId()).orElse(null);
+            transaction.setConsignee(consignee);
+        }
 
         // Save the transaction
         Transaction saved = transactionRepository.save(transaction);

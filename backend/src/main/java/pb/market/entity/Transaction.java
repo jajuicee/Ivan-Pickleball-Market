@@ -48,6 +48,13 @@ public class Transaction {
     @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
     private StockBatch stockBatch;
 
+    private String transactionType = "REGULAR"; // REGULAR or CONSIGNMENT
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "consignee_id")
+    @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
+    private Consignee consignee;
+
     @PrePersist
     protected void onCreate() {
         this.transactionDate = LocalDateTime.now();

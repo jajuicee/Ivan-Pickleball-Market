@@ -27,6 +27,16 @@ public class SchemaFix implements CommandLineRunner {
         safeExecute("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS supplier_id BIGINT",
                 "Column 'supplier_id' checked/added to 'transactions' table.");
 
+        safeExecute("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS transaction_type VARCHAR(255) DEFAULT 'REGULAR'",
+                "Column 'transaction_type' checked/added to 'transactions' table.");
+
+        safeExecute("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS consignee_id BIGINT",
+                "Column 'consignee_id' checked/added to 'transactions' table.");
+
+        // Backfill old transactions
+        safeExecute("UPDATE transactions SET transaction_type = 'REGULAR' WHERE transaction_type IS NULL",
+                "Backfilled existing transactions with 'REGULAR' type.");
+
         // ── Data integrity fixes ───────────────────────────────────────────────
         // Fix any existing negative remaining_quantity (could happen from old race conditions)
         safeExecute("UPDATE stock_batches SET remaining_quantity = 0 WHERE remaining_quantity < 0",

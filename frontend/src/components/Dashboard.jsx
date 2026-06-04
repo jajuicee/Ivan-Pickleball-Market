@@ -15,7 +15,8 @@ import {
     Building2,
     Truck,
     BarChart2,
-    Tablet
+    Tablet,
+    Users
 } from 'lucide-react';
 
 // Main Page Components
@@ -29,6 +30,7 @@ import ManageInventory from './ManageInventory';
 import Supplies from './Supplies';
 import Suppliers from './Suppliers';
 import ProductSales from './ProductSales';
+import ConsigneesPage from './ConsigneesPage';
 
 const Dashboard = () => {
     const location = useLocation();
@@ -60,7 +62,7 @@ const Dashboard = () => {
     // ─────────────────────────────────────────────────────────────────────────
 
     const navItems = [
-        { name: 'New Order',       path: '/orders',           icon: ShoppingCart },
+        { name: 'POS System',      path: '/orders',           icon: ShoppingCart },
         { name: 'Add Products',    path: '/add-product',      icon: PackagePlus },
         { name: 'View Inventory',  path: '/inventory',        icon: Boxes },
         { name: 'Manage Inventory',path: '/manage-inventory', icon: ClipboardList },
@@ -68,6 +70,7 @@ const Dashboard = () => {
         { name: 'Suppliers',       path: '/suppliers',        icon: Building2 },
         { name: 'Product Sales',   path: '/product-sales',    icon: BarChart2 },
         { name: 'Order History',   path: '/history',          icon: History },
+        { name: 'Consignees',      path: '/consignees',       icon: Users },
         { name: 'Analytics',       path: '/analytics',        icon: TrendingUp },
         { name: 'Expenses',        path: '/expenses',         icon: Receipt },
     ];
@@ -168,6 +171,7 @@ const Dashboard = () => {
                             <Route path="/suppliers" element={<Suppliers />} />
                             <Route path="/product-sales" element={<ProductSales products={products} />} />
                             <Route path="/history" element={<OrderHistory />} />
+                            <Route path="/consignees" element={<ConsigneesPage />} />
                             <Route path="/analytics" element={<Analytics />} />
                             <Route path="/expenses" element={<Expenses />} />
                         </Routes>
