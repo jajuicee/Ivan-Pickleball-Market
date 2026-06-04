@@ -14,7 +14,6 @@ import pb.market.repository.TransactionRepository;
 import pb.market.repository.VariantRepository;
 
 import java.math.BigDecimal;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -72,7 +71,7 @@ public class ProductService {
         List<Product> products = productRepository.findAllWithVariants();
         if (products.isEmpty()) return products;
 
-        // Fetch aggregates with robust numeric casting
+        // Fetch all aggregates in single batch queries — no N+1 subqueries
         Map<Long, Long> addedMap = stockBatchRepository.sumQuantityByVariantId().stream()
                 .collect(Collectors.toMap(
                     row -> ((Number) row[0]).longValue(), 
@@ -85,12 +84,28 @@ public class ProductService {
                     row -> row[1] != null ? ((Number) row[1]).longValue() : 0L
                 ));
 
-        // Populate variants
+        // Current remaining stock per variant (replaces old @Formula)
+        Map<Long, Long> stockMap = stockBatchRepository.sumRemainingQuantityByVariantId().stream()
+                .collect(Collectors.toMap(
+                    row -> ((Number) row[0]).longValue(),
+                    row -> row[1] != null ? ((Number) row[1]).longValue() : 0L
+                ));
+
+        // Total units removed via manual adjustments (damaged, returned to supplier, etc.)
+        Map<Long, Long> adjustedMap = stockAdjustmentRepository.sumQuantityByVariantId().stream()
+                .collect(Collectors.toMap(
+                    row -> ((Number) row[0]).longValue(),
+                    row -> row[1] != null ? ((Number) row[1]).longValue() : 0L
+                ));
+
+        // Populate all transient fields on each variant in one pass
         for (Product product : products) {
             if (product.getVariants() != null) {
                 for (ProductVariant v : product.getVariants()) {
                     v.setTotalAdded(addedMap.getOrDefault(v.getId(), 0L));
                     v.setTotalSold(soldMap.getOrDefault(v.getId(), 0L));
+                    v.setTotalAdjusted(adjustedMap.getOrDefault(v.getId(), 0L));
+                    v.setStockQuantity(stockMap.getOrDefault(v.getId(), 0L).intValue());
                 }
             }
         }
@@ -150,7 +165,6 @@ public class ProductService {
         ProductVariant variant = variantRepository.findById(variantId)
                 .orElseThrow(() -> new RuntimeException("Variant not found with id: " + variantId));
 
-
         // Resolve the supplier if provided
         Supplier supplier = null;
         if (supplierId != null) {
@@ -160,16 +174,17 @@ public class ProductService {
         StockBatch batch = new StockBatch();
         batch.setVariant(variant);
         batch.setQuantity(quantity);
-        batch.setRemainingQuantity(quantity); // Fix #3: explicitly set so it's never relying solely on @PrePersist
+        batch.setRemainingQuantity(quantity);
         batch.setAcquisitionPrice(acquisitionPrice);
         batch.setSupplier(supplier);
         batch.setConsigned(consigned);
-        batch.setBatchId(UUID.randomUUID().toString()); // Fix: Add batchId so it shows in Supply History
+        batch.setBatchId(UUID.randomUUID().toString());
         stockBatchRepository.save(batch);
 
-        // Flush batch changes to DB and refresh variant so @Formula stockQuantity recalculates
+        // Flush then query the true remaining stock from the DB — no stale @Formula
         entityManager.flush();
-        entityManager.refresh(variant);
+        Long currentStock = stockBatchRepository.sumRemainingQuantityForVariant(variantId);
+        variant.setStockQuantity(currentStock != null ? currentStock.intValue() : 0);
         return variant;
     }
 
@@ -181,15 +196,23 @@ public class ProductService {
         ProductVariant variant = variantRepository.findById(variantId)
                 .orElseThrow(() -> new RuntimeException("Variant not found with id: " + variantId));
 
-        int current = variant.getStockQuantity() != null ? variant.getStockQuantity() : 0;
-        if (quantity > current) {
-            throw new IllegalArgumentException("Cannot deduct more than current stock (" + current + ").");
-        }
-
-        int remainingToDeduct = quantity;
-        // Use PESSIMISTIC WRITE lock to prevent concurrent deductions from the same batch rows.
+        // ── RACE-CONDITION FIX ──────────────────────────────────────────────────
+        // Lock ALL receivable batch rows FIRST (PESSIMISTIC_WRITE), then validate
+        // available stock from the locked snapshot. This eliminates the old
+        // check-then-act gap where a concurrent sale could drain stock between
+        // the @Formula read and the actual deduction.
         List<StockBatch> batches = stockBatchRepository
             .findReceivableByVariantIdForUpdate(variantId);
+
+        int actualAvailable = batches.stream()
+                .mapToInt(b -> b.getRemainingQuantity() != null ? b.getRemainingQuantity() : 0)
+                .sum();
+        if (quantity > actualAvailable) {
+            throw new IllegalArgumentException("Cannot deduct more than current stock (" + actualAvailable + ").");
+        }
+
+        // FIFO deduction across locked batches
+        int remainingToDeduct = quantity;
         for (StockBatch batch : batches) {
             if (remainingToDeduct <= 0) break;
             int available = batch.getRemainingQuantity() != null ? batch.getRemainingQuantity() : 0;
@@ -203,7 +226,7 @@ public class ProductService {
             stockBatchRepository.save(batch);
         }
 
-        // Persist the adjustment so the "Reason" the user picked is no longer thrown away.
+        // Persist the adjustment record
         StockAdjustment adj = new StockAdjustment();
         adj.setVariant(variant);
         adj.setQuantity(quantity);
@@ -211,10 +234,11 @@ public class ProductService {
         adj.setNote(note);
         stockAdjustmentRepository.save(adj);
 
-        // Flush batch changes to DB and refresh variant so @Formula stockQuantity recalculates
+        // Flush then query the true remaining stock from the DB
         entityManager.flush();
-        entityManager.refresh(variant);
-        return variantRepository.save(variant);
+        Long currentStock = stockBatchRepository.sumRemainingQuantityForVariant(variantId);
+        variant.setStockQuantity(currentStock != null ? currentStock.intValue() : 0);
+        return variant;
     }
 
     /** Partial edit of a variant — only non-null fields are applied. */

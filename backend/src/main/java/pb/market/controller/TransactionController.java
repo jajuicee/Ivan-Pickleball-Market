@@ -196,17 +196,28 @@ public class TransactionController {
                 batch.setRemainingQuantity(batch.getRemainingQuantity() + 1);
                 stockBatchRepository.save(batch);
             } else {
-                // Fallback for legacy transactions (null stockBatch): 
-                // Restore to the most recently restocked RECEIVED batch for that variant.
+                // Fallback for legacy transactions (null stockBatch):
+                // Prefer a batch that actually had items consumed (remaining < quantity)
+                // so we restore to the right cost/supplier context. Use PESSIMISTIC_WRITE
+                // lock to prevent two concurrent cancels from double-restoring.
                 ProductVariant variant = tx.getVariant();
-                // Use a PESSIMISTIC WRITE lock so two concurrent cancels on the
-                // same variant don't both read and double-restore the same batch.
                 List<StockBatch> batches = stockBatchRepository
                     .findByVariantIdAndStatusReceivedForUpdate(variant.getId());
-                if (!batches.isEmpty()) {
-                    StockBatch mostRecent = batches.get(0);
-                    mostRecent.setRemainingQuantity(mostRecent.getRemainingQuantity() + 1);
-                    stockBatchRepository.save(mostRecent);
+                
+                StockBatch targetBatch = null;
+                // First: find a batch that had items sold from it (remaining < quantity)
+                for (StockBatch b : batches) {
+                    int orig = b.getQuantity() != null ? b.getQuantity() : 0;
+                    int rem  = b.getRemainingQuantity() != null ? b.getRemainingQuantity() : 0;
+                    if (rem < orig) { targetBatch = b; break; }
+                }
+                // Second: fall back to the most recent batch if none were consumed
+                if (targetBatch == null && !batches.isEmpty()) {
+                    targetBatch = batches.get(0);
+                }
+                if (targetBatch != null) {
+                    targetBatch.setRemainingQuantity(targetBatch.getRemainingQuantity() + 1);
+                    stockBatchRepository.save(targetBatch);
                 }
             }
 

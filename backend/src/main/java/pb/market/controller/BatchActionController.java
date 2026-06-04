@@ -98,15 +98,17 @@ public class BatchActionController {
             stockBatchRepository.save(batch);
         }
 
-        // 3. Log Expense
-        Expense expense = new Expense();
-        expense.setName(supplier != null ? "Paddles from " + supplier.getName() : "Paddles Batch Purchase");
-        expense.setCategory("Business");
-        expense.setCost(grandTotal);
-        expense.setBatchId(batchId);
-        expense.setNote("Auto-generated from Batch " + (request.getStatus() != null ? request.getStatus() : "RECEIVED")
-                + ". Total items: " + totalItems + ".");
-        expenseRepository.save(expense);
+        // 3. Log Expense only if actual money was spent (skip ₱0 consigned batches)
+        if (grandTotal.compareTo(BigDecimal.ZERO) > 0) {
+            Expense expense = new Expense();
+            expense.setName(supplier != null ? "Paddles from " + supplier.getName() : "Paddles Batch Purchase");
+            expense.setCategory("Business");
+            expense.setCost(grandTotal);
+            expense.setBatchId(batchId);
+            expense.setNote("Auto-generated from Batch " + (request.getStatus() != null ? request.getStatus() : "RECEIVED")
+                    + ". Total items: " + totalItems + ".");
+            expenseRepository.save(expense);
+        }
 
         stockWebSocketHandler.broadcastStockUpdate();
         return ResponseEntity.ok(Map.of(

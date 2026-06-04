@@ -191,19 +191,19 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
 
                     /* Target printable container */
                     .pos-ticket-printable {
-                        position: fixed !important;
+                        position: absolute !important;
                         left: 0 !important;
                         top: 0 !important;
                         width: 72mm !important;
                         max-width: 72mm !important;
-                        height: 100mm !important;
-                        max-height: 100mm !important;
+                        height: auto !important;
+                        max-height: none !important;
                         padding: 3mm 4mm !important;
                         background: white !important;
                         box-shadow: none !important;
                         border: none !important;
                         box-sizing: border-box !important;
-                        overflow: hidden !important;
+                        overflow: visible !important;
                         font-size: 9px !important;
                         line-height: 1.25 !important;
                         z-index: 9999999 !important;
@@ -228,7 +228,7 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
                     .pos-ticket-printable .ticket-total-label {
                         font-size: 10px !important;
                     }
-                    @page { size: 72mm 100mm; margin: 0; }
+                    @page { size: 72mm auto; margin: 0; }
                 }
             `}</style>
 

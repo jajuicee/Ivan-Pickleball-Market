@@ -92,6 +92,7 @@ const ManageInventory = ({ products = [], loading = false, refetchProducts }) =>
                     isOutOfStock: qty <= 0,
                     totalAdded: variant.totalAdded || 0,
                     totalSold: variant.totalSold || 0,
+                    totalAdjusted: variant.totalAdjusted || 0,
                     consigned: variant.consigned,
                     defaultSupplier: variant.defaultSupplier,
                     dropdownName: isPaddle
@@ -374,11 +375,16 @@ const ManageInventory = ({ products = [], loading = false, refetchProducts }) =>
                                             {row.quantity ?? 0} stock{(row.quantity ?? 0) !== 1 ? 's' : ''} left
                                         </span>
                                         <div className="flex items-center gap-1.5">
-                                            <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">
+                                            <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded" title="Total Sold">
                                                 {row.totalSold} sold
                                             </span>
+                                            {row.totalAdjusted > 0 && (
+                                                <span className="text-[10px] font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded" title="Manual Deductions / Adjustments">
+                                                    -{row.totalAdjusted} adj
+                                                </span>
+                                            )}
                                             <span className="text-[10px] text-zinc-300">/</span>
-                                            <span className="text-[10px] font-bold text-zinc-400 bg-stone-100 px-1.5 py-0.5 rounded">
+                                            <span className="text-[10px] font-bold text-zinc-400 bg-stone-100 px-1.5 py-0.5 rounded" title="Total Added">
                                                 {row.totalAdded} total
                                             </span>
                                         </div>
