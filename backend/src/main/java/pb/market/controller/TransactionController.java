@@ -92,8 +92,7 @@ public class TransactionController {
         }
         t.setStatus("FULL");
         transactionRepository.save(t);
-        // Reload with JOIN FETCH so lazy relations are initialized before JSON serialization
-        return ResponseEntity.ok(transactionRepository.findByIdWithDetails(id).orElse(t));
+        return ResponseEntity.ok(Map.of("message", "Transaction marked as completed.", "transactionId", id));
     }
 
     // ── Update payment method for an entire order group ───────────────────────
