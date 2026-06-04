@@ -263,7 +263,7 @@ const Analytics = () => {
             const isPaid = t.status !== 'UNPAID';
             return inDate && inPayment && isPaid;
         }).map(t => {
-            const selling = Number(t.finalPrice || 0);
+            const selling = t.status === 'PARTIAL' ? Number(t.downpayment || 0) : Number(t.finalPrice || 0);
             const cost = Number(t.costPrice || t.variant?.acquisitionPrice || 0);
             return { ...t, date: new Date(t.transactionDate), profit: selling - cost, revenue: selling, cost };
         });
