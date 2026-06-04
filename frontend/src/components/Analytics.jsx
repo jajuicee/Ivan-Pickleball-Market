@@ -196,6 +196,7 @@ const Analytics = () => {
     const [topFilter, setTopFilter] = useState('units');
     const [mainTab, setMainTab] = useState('trends');
     const [paymentFilter, setPaymentFilter] = useState('All');
+    const [typeFilter, setTypeFilter] = useState('REGULAR'); // NEW: 'All', 'REGULAR', 'CONSIGNMENT'
     const [categoryFilter, setCategoryFilter] = useState('All');
     const [showCalendar, setShowCalendar] = useState(false);
     const [customRange, setCustomRange] = useState(null);
@@ -261,8 +262,12 @@ const Analytics = () => {
             const inDate = tDate >= cutoffDate && tDate <= toDate;
             const inPayment = paymentFilter === 'All' || t.paymentMethod === paymentFilter;
             const isPaid = t.status !== 'UNPAID';
-            const isRegular = t.transactionType !== 'CONSIGNMENT';
-            return inDate && inPayment && isPaid && isRegular;
+            const inType = typeFilter === 'All' 
+                ? true 
+                : typeFilter === 'REGULAR' 
+                    ? t.transactionType !== 'CONSIGNMENT' 
+                    : t.transactionType === 'CONSIGNMENT';
+            return inDate && inPayment && isPaid && inType;
         }).map(t => {
             const selling = t.status === 'PARTIAL' ? Number(t.downpayment || 0) : Number(t.finalPrice || 0);
             const cost = Number(t.costPrice || t.variant?.acquisitionPrice || 0);
@@ -318,7 +323,7 @@ const Analytics = () => {
         const avgMargin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
 
         return { chartData, topProducts, allCategories, summary: { revenue: totalRevenue, profit: totalProfit, cost: totalCost, units: totalUnits, margin: avgMargin } };
-    }, [transactions, timeRange, topFilter, customRange, paymentFilter, categoryFilter]);
+    }, [transactions, timeRange, topFilter, customRange, paymentFilter, typeFilter, categoryFilter]);
 
     const { chartData, topProducts, allCategories = ['All'], summary } = processedData;
     const paddleChartHeight = Math.max(400, topProducts.length * 40 + 50);
@@ -333,10 +338,30 @@ const Analytics = () => {
                 </h2>
 
                 <div className="flex items-center gap-2">
+                    {/* Transaction Type Filter */}
+                    <div className="flex bg-white border border-stone-200 rounded-lg p-1 shadow-sm">
+                        {['REGULAR', 'CONSIGNMENT', 'All'].map(tType => (
+                            <button
+                                key={tType}
+                                onClick={() => setTypeFilter(tType)}
+                                className="px-3 py-1.5 text-xs font-bold rounded-md capitalize"
+                                style={{
+                                    backgroundColor: typeFilter === tType ? '#f3e8ff' : 'transparent',
+                                    color: typeFilter === tType ? '#7e22ce' : '#71717a',
+                                    transition: 'all 150ms ease'
+                                }}
+                            >
+                                {tType.toLowerCase()}
+                            </button>
+                        ))}
+                    </div>
+
+                    <div className="w-px h-5 bg-stone-200 mx-1" />
+
                     {/* Payment Method Filter */}
                     <PaymentFilter transactions={transactions} value={paymentFilter} onChange={setPaymentFilter} />
 
-                    <div className="w-px h-5 bg-stone-200" />
+                    <div className="w-px h-5 bg-stone-200 mx-1" />
 
                     {/* Time Range Presets */}
                     <div className="flex bg-white border border-stone-200 rounded-lg p-1 shadow-sm">
