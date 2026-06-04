@@ -15,22 +15,45 @@ public class SchemaFix implements CommandLineRunner {
 
     @Override
     public void run(String... args) throws Exception {
-        log.info("Checking database schema for missing columns...");
+        log.info("Checking database schema for missing columns and constraints...");
+
+        // ── Column migrations (idempotent) ─────────────────────────────────────
+        safeExecute("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS consigned BOOLEAN DEFAULT FALSE",
+                "Column 'consigned' checked/added to 'transactions' table.");
+
+        safeExecute("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS cost_price DECIMAL(19,2)",
+                "Column 'cost_price' checked/added to 'transactions' table.");
+
+        safeExecute("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS supplier_id BIGINT",
+                "Column 'supplier_id' checked/added to 'transactions' table.");
+
+        // ── Data integrity fixes ───────────────────────────────────────────────
+        // Fix any existing negative remaining_quantity (could happen from old race conditions)
+        safeExecute("UPDATE stock_batches SET remaining_quantity = 0 WHERE remaining_quantity < 0",
+                "Fixed any negative remaining_quantity rows in stock_batches.");
+
+        // ── Database constraints (safe for concurrent backend instances) ───────
+        // CHECK: remaining_quantity can never go negative at the DB level
+        safeExecute("ALTER TABLE stock_batches ADD CONSTRAINT chk_remaining_non_negative CHECK (remaining_quantity >= 0)",
+                "CHECK constraint chk_remaining_non_negative added to stock_batches.");
+
+        // FK: transactions.stock_batch_id → ON DELETE SET NULL (prevents 500 on batch deletion)
+        safeExecute("ALTER TABLE transactions DROP CONSTRAINT IF EXISTS fk_tx_stock_batch",
+                "Dropped old FK constraint fk_tx_stock_batch (if any).");
+        safeExecute("ALTER TABLE transactions ADD CONSTRAINT fk_tx_stock_batch " +
+                    "FOREIGN KEY (stock_batch_id) REFERENCES stock_batches(id) ON DELETE SET NULL",
+                "FK constraint fk_tx_stock_batch with ON DELETE SET NULL added.");
+
+        log.info("Schema check complete.");
+    }
+
+    /** Execute SQL silently — if it fails (e.g. constraint already exists), just log and move on. */
+    private void safeExecute(String sql, String successMsg) {
         try {
-            // Add 'consigned' column to 'transactions' table if it doesn't exist
-            jdbcTemplate.execute("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS consigned BOOLEAN DEFAULT FALSE");
-            log.info("Column 'consigned' checked/added to 'transactions' table.");
-
-            // Add 'cost_price' column if missing (just in case)
-            jdbcTemplate.execute("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS cost_price DECIMAL(19,2)");
-            log.info("Column 'cost_price' checked/added to 'transactions' table.");
-
-            // Add 'supplier_id' column if missing
-            jdbcTemplate.execute("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS supplier_id BIGINT");
-            log.info("Column 'supplier_id' checked/added to 'transactions' table.");
-            
+            jdbcTemplate.execute(sql);
+            log.info(successMsg);
         } catch (Exception e) {
-            log.warn("Could not execute schema fix: " + e.getMessage());
+            log.info("Skipped (already applied or not needed): " + e.getMessage());
         }
     }
 }

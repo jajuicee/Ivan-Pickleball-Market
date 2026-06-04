@@ -48,9 +48,10 @@ public class StockBatch {
 
     @PrePersist
     public void prePersist() {
-        this.restockedAt = LocalDateTime.now();
-        if (this.remainingQuantity == null) {
-            this.remainingQuantity = this.quantity;
+        if (this.restockedAt == null) {
+            this.restockedAt = LocalDateTime.now();
         }
+        // remainingQuantity is always set explicitly by callers (addStock, batchReceive, etc.)
+        // Do NOT auto-fill from quantity here — INCOMING batches intentionally set it to 0.
     }
 }

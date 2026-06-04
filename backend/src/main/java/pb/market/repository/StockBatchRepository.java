@@ -35,6 +35,14 @@ public interface StockBatchRepository extends JpaRepository<StockBatch, Long> {
     @Query("SELECT s.variant.id, SUM(s.quantity) FROM StockBatch s WHERE s.status = 'RECEIVED' GROUP BY s.variant.id")
     List<Object[]> sumQuantityByVariantId();
 
+    // Current sellable stock per variant — replaces the old @Formula on ProductVariant
+    @Query("SELECT s.variant.id, COALESCE(SUM(s.remainingQuantity), 0) FROM StockBatch s WHERE s.status = 'RECEIVED' GROUP BY s.variant.id")
+    List<Object[]> sumRemainingQuantityByVariantId();
+
+    // Single-variant version — used after add/deduct to return the refreshed count
+    @Query("SELECT COALESCE(SUM(s.remainingQuantity), 0) FROM StockBatch s WHERE s.variant.id = :variantId AND s.status = 'RECEIVED'")
+    Long sumRemainingQuantityForVariant(@Param("variantId") Long variantId);
+
     // Eagerly loads variant → product and supplier in ONE query to avoid N+1 loops
     @Query("SELECT b FROM StockBatch b JOIN FETCH b.variant v JOIN FETCH v.product LEFT JOIN FETCH b.supplier WHERE b.batchId IS NOT NULL")
     List<StockBatch> findAllWithVariantAndProduct();

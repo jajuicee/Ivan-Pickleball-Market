@@ -3,7 +3,7 @@ package pb.market.entity;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.Data;
-import org.hibernate.annotations.Formula;
+
 import java.math.BigDecimal;
 
 @Entity
@@ -23,7 +23,9 @@ public class ProductVariant {
 
     private BigDecimal acquisitionPrice;
     private BigDecimal sellingPrice;
-    @Formula("(SELECT COALESCE(SUM(s.remaining_quantity), 0) FROM stock_batches s WHERE s.variant_id = id AND s.status = 'RECEIVED')")
+    // Computed from stock_batches in ProductService.getAllProducts() — NOT stored in DB.
+    // Using @Transient instead of @Formula avoids N+1 subqueries and stale-read bugs.
+    @Transient
     private Integer stockQuantity;
 
     // Below this threshold the variant is flagged as "low stock" in the UI. null = use system default.
@@ -37,6 +39,9 @@ public class ProductVariant {
 
     @Transient
     private Long totalSold = 0L;
+
+    @Transient
+    private Long totalAdjusted = 0L;
 
     // Whether this variant is consigned (affects default for new batches)
     @Column(columnDefinition = "boolean default false")
