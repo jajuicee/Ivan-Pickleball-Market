@@ -39,6 +39,7 @@ const TIME_RANGES = [
     { id: '1W', label: 'This Week' },
     { id: '1M', label: 'This Month' },
     { id: '1Y', label: 'This Year' },
+    { id: 'ALL', label: 'All Time' },
 ];
 
 const getRangeForPreset = (id) => {
@@ -52,6 +53,7 @@ const getRangeForPreset = (id) => {
         }
         case '1M': return { start: new Date(now.getFullYear(), now.getMonth(), 1), end: endOfDay(now) };
         case '1Y': return { start: new Date(now.getFullYear(), 0, 1), end: endOfDay(now) };
+        case 'ALL': return null;
         default: return { start: startOfDay(now), end: endOfDay(now) };
     }
 };
@@ -380,7 +382,7 @@ const OrderHistory = () => {
 
     const clearCustomRange = () => {
         setCustomRange(null);
-        setActivePreset('TODAY');
+        setActivePreset('ALL');
     };
 
     const toggleExpand = (id) => {
@@ -389,33 +391,65 @@ const OrderHistory = () => {
         setExpanded(next);
     };
 
-    const fetchTransactions = () => {
+    // Build fetch URL from a preset id or custom range
+    const buildFetchUrl = (preset, custom) => {
+        const base = `http://${window.location.hostname}:8080/api/transactions`;
+        const now = new Date();
+        const fmt = (d) => d.toISOString().slice(0, 19); // LocalDateTime format
+
+        if (custom) {
+            const from = fmt(custom.start);
+            const to   = fmt(new Date(custom.end.getTime()));
+            return `${base}?from=${from}&to=${to}&limit=5000`;
+        }
+        switch (preset) {
+            case 'TODAY': {
+                const from = fmt(new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0));
+                const to   = fmt(new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59));
+                return `${base}?from=${from}&to=${to}&limit=300`;
+            }
+            case '1W': {
+                const weekStart = new Date(now);
+                weekStart.setDate(now.getDate() - now.getDay());
+                weekStart.setHours(0, 0, 0, 0);
+                return `${base}?from=${fmt(weekStart)}&to=${fmt(new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59))}&limit=1500`;
+            }
+            case '1M': {
+                const from = fmt(new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0));
+                const to   = fmt(new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59));
+                return `${base}?from=${from}&to=${to}&limit=5000`;
+            }
+            case '1Y': {
+                const from = fmt(new Date(now.getFullYear(), 0, 1, 0, 0, 0));
+                const to   = fmt(new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59));
+                return `${base}?from=${from}&to=${to}&limit=10000`;
+            }
+            default: // ALL
+                return `${base}?limit=100000`;
+        }
+    };
+
+    const fetchTransactions = (preset, custom) => {
+        const url = buildFetchUrl(preset ?? activePreset, custom !== undefined ? custom : customRange);
         setLoading(true);
         setError('');
-        axios.get(`http://${window.location.hostname}:8080/api/transactions`)
+        axios.get(url)
             .then(res => setTransactions(Array.isArray(res.data) ? res.data : []))
             .catch(() => setError('Could not load order history. Is the backend running?'))
             .finally(() => setLoading(false));
     };
 
-    useEffect(() => { fetchTransactions(); }, []);
+    // Re-fetch whenever the active preset or custom range changes
+    useEffect(() => { fetchTransactions(activePreset, customRange); }, [activePreset, customRange]);
 
     const handleCompleteItem = async (item) => {
         setCompleting(item.id);
-
-        setTransactions(prev =>
-            prev.map(t => t.id === item.id ? { ...t, status: 'FULL' } : t)
-        );
-
+        setTransactions(prev => prev.map(t => t.id === item.id ? { ...t, status: 'FULL' } : t));
         try {
             await axios.patch(`http://${window.location.hostname}:8080/api/transactions/${item.id}/complete`);
-            axios.get(`http://${window.location.hostname}:8080/api/transactions`).then(res => {
-                if (Array.isArray(res.data)) setTransactions(res.data);
-            });
+            fetchTransactions();
         } catch {
-            setTransactions(prev =>
-                prev.map(t => t.id === item.id ? { ...t, status: item.status } : t)
-            );
+            setTransactions(prev => prev.map(t => t.id === item.id ? { ...t, status: item.status } : t));
             setError('Network error — could not save payment completion.');
         } finally {
             setCompleting(null);
@@ -427,13 +461,11 @@ const OrderHistory = () => {
         const group = payingBalanceGroup;
         const amount = parseFloat(paymentAmountInput);
         if (isNaN(amount) || amount <= 0) {
-            setError("Please enter a valid amount greater than zero.");
+            setError('Please enter a valid amount greater than zero.');
             return;
         }
-
         setPayingBalanceGroup(null);
         setCompleting(group.orderId);
-
         try {
             await axios.patch(`http://${window.location.hostname}:8080/api/transactions/group/${group.orderId}/pay-partial`, { amount });
             fetchTransactions();
@@ -449,11 +481,7 @@ const OrderHistory = () => {
     const handleCompleteGroup = async (group) => {
         setCompleting(group.orderId);
         const unfinished = group.items.filter(i => i.status !== 'FULL');
-
-        setTransactions(prev =>
-            prev.map(t => unfinished.find(u => u.id === t.id) ? { ...t, status: 'FULL' } : t)
-        );
-
+        setTransactions(prev => prev.map(t => unfinished.find(u => u.id === t.id) ? { ...t, status: 'FULL' } : t));
         try {
             await axios.patch(`http://${window.location.hostname}:8080/api/transactions/group/${group.orderId}/complete`);
             fetchTransactions();
@@ -580,6 +608,7 @@ const OrderHistory = () => {
         }
 
         if (filter === STATUS_ALL) return allGroups;
+        if (filter === STATUS_UNPAID) return allGroups.filter(g => g.status === 'UNPAID' || g.status === 'PARTIAL');
         return allGroups.filter(g => g.status === filter);
     }, [filter, transactions, dateWindow, searchQuery, isSearching, paymentFilter]);
 
@@ -618,7 +647,8 @@ const OrderHistory = () => {
             : activePreset === '1W' ? 'This Week'
                 : activePreset === '1M' ? 'This Month'
                     : activePreset === '1Y' ? 'This Year'
-                        : '';
+                        : activePreset === 'ALL' ? 'All Time'
+                            : '';
 
     // Changes whenever the date filter changes — used to retrigger row animations
     const tableKey = customRange ? customRange.label : (activePreset || 'all');
@@ -1036,16 +1066,11 @@ const OrderHistory = () => {
                                                             onClick={() => handleCompleteItem(group.items[0])}
                                                             disabled={completing === group.items[0].id}
                                                             className="flex items-center gap-1.5 px-3 py-1.5 text-white text-xs font-bold rounded-lg disabled:opacity-50 shadow-sm"
-                                                            style={{
-                                                                backgroundColor: '#16a34a',
-                                                                transition: 'background-color 150ms ease',
-                                                            }}
+                                                            style={{ backgroundColor: '#16a34a', transition: 'background-color 150ms ease' }}
                                                             onMouseEnter={e => e.currentTarget.style.backgroundColor = '#15803d'}
                                                             onMouseLeave={e => e.currentTarget.style.backgroundColor = '#16a34a'}
                                                         >
-                                                            {completing === group.items[0].id
-                                                                ? <Loader2 size={12} className="animate-spin" />
-                                                                : <CheckCircle2 size={12} />}
+                                                            {completing === group.items[0].id ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={12} />}
                                                             Pay Bal.
                                                         </button>
                                                     )}
@@ -1144,9 +1169,10 @@ const OrderHistory = () => {
                                                                                     <button
                                                                                         onClick={() => handleCompleteItem(item)}
                                                                                         disabled={completing === item.id}
-                                                                                        className="w-full px-2 py-1 bg-green-600 hover:bg-green-700 disabled:bg-stone-300 text-white text-[10px] uppercase tracking-wider font-bold rounded shadow-sm transition-colors flex justify-center items-center"
+                                                                                        className="w-full px-2 py-1 bg-green-600 hover:bg-green-700 disabled:bg-stone-300 text-white text-[10px] uppercase tracking-wider font-bold rounded shadow-sm transition-colors flex justify-center items-center gap-1"
                                                                                     >
-                                                                                        {completing === item.id ? <Loader2 size={12} className="animate-spin" /> : 'Pay'}
+                                                                                        {completing === item.id ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={11} />}
+                                                                                        Pay
                                                                                     </button>
                                                                                 )}
                                                                             </td>
@@ -1198,66 +1224,35 @@ const OrderHistory = () => {
 
             {/* ===== PARTIAL PAYMENT MODAL ===== */}
             {payingBalanceGroup && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
-                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden flex flex-col transform transition-all animate-in zoom-in-95 duration-200">
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" style={{ animation: 'fadeSlideIn 150ms ease' }}>
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden flex flex-col">
                         <div className="p-4 bg-stone-50 border-b border-stone-100 flex items-center justify-between">
                             <h3 className="font-bold text-stone-800 flex items-center gap-2">
-                                <CreditCard size={18} className="text-blue-500" />
-                                Pay Amount
+                                <CreditCard size={18} className="text-blue-500" /> Pay Amount
                             </h3>
-                            <button
-                                onClick={() => setPayingBalanceGroup(null)}
-                                className="p-1 hover:bg-stone-200 rounded-full text-stone-400 transition-colors"
-                            >
+                            <button onClick={() => setPayingBalanceGroup(null)} className="p-1 hover:bg-stone-200 rounded-full text-stone-400 transition-colors">
                                 <X size={16} />
                             </button>
                         </div>
                         <form onSubmit={handlePayPartialSubmit} className="p-5 flex flex-col gap-4">
-                            <div className="flex flex-col gap-1.5">
-                                <label className="text-xs font-bold text-stone-500 uppercase tracking-wider">
-                                    Order #{payingBalanceGroup.displayId}
-                                </label>
-                                <div className="text-xs text-stone-500">
-                                    Total remaining balance: <span className="font-bold text-stone-800">₱{
-                                        payingBalanceGroup.items.reduce((sum, item) => sum + (item.finalPrice - (item.downpayment || 0)), 0).toLocaleString('en-PH', {minimumFractionDigits: 2})
-                                    }</span>
-                                </div>
+                            <div className="text-xs text-stone-500">
+                                Order #{payingBalanceGroup.displayId} · Remaining: <span className="font-bold text-stone-800">
+                                    {formatCurrency(payingBalanceGroup.items.reduce((s, i) => s + (i.finalPrice - (i.downpayment || 0)), 0))}
+                                </span>
                             </div>
-                            
-                            <div className="flex flex-col gap-2">
-                                <label className="text-sm font-semibold text-stone-700">
-                                    Amount Paid
-                                </label>
-                                <div className="relative">
-                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400 font-bold">₱</span>
-                                    <input
-                                        type="number"
-                                        step="0.01"
-                                        min="0.01"
-                                        required
-                                        autoFocus
-                                        value={paymentAmountInput}
-                                        onChange={e => setPaymentAmountInput(e.target.value)}
-                                        className="w-full pl-8 pr-3 py-2.5 border-2 border-stone-200 rounded-xl focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all font-bold text-lg text-stone-800"
-                                        placeholder="0.00"
-                                    />
-                                </div>
+                            <div className="relative">
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400 font-bold">₱</span>
+                                <input
+                                    type="number" step="0.01" min="0.01" required autoFocus
+                                    value={paymentAmountInput}
+                                    onChange={e => setPaymentAmountInput(e.target.value)}
+                                    className="w-full pl-8 pr-3 py-2.5 border-2 border-stone-200 rounded-xl focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all font-bold text-lg text-stone-800"
+                                    placeholder="0.00"
+                                />
                             </div>
-
-                            <div className="flex items-center gap-2 mt-2 pt-4 border-t border-stone-100">
-                                <button
-                                    type="button"
-                                    onClick={() => setPayingBalanceGroup(null)}
-                                    className="flex-1 py-2.5 text-sm font-bold text-stone-600 bg-stone-100 hover:bg-stone-200 rounded-xl transition-colors"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    type="submit"
-                                    className="flex-1 py-2.5 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-colors shadow-sm"
-                                >
-                                    Submit
-                                </button>
+                            <div className="flex items-center gap-2 pt-2 border-t border-stone-100">
+                                <button type="button" onClick={() => setPayingBalanceGroup(null)} className="flex-1 py-2.5 text-sm font-bold text-stone-600 bg-stone-100 hover:bg-stone-200 rounded-xl transition-colors">Cancel</button>
+                                <button type="submit" className="flex-1 py-2.5 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-colors shadow-sm">Submit</button>
                             </div>
                         </form>
                     </div>
