@@ -12,6 +12,10 @@
 - In `Transaction.java`, there is a polymorphic `transactionType` (can be `REGULAR` or `CONSIGNMENT`) and a `consignee` foreign key.
 - A consignment sale *still* deducts from the normal `StockBatch` inventory using the exact same FIFO logic.
 - Consignment sales do NOT appear in the general "Analytics" revenue/profit charts (they are filtered out so they don't skew actual business revenue), but they DO appear in `OrderHistory` with a purple `CONSIGNMENT` badge.
+- **Consignment Management (`ConsigneesPage.jsx`)**: 
+  - This dedicated tab manages partial payments and returns for consigned stock.
+  - **Returns**: Returning a paddle via `/api/transactions/{id}/return` permanently deletes that single transaction row and uses `Pessimistic Write Locks` to safely restore exactly +1 to the `remainingQuantity` of the original `StockBatch` it was deducted from.
+  - **Partial/Custom Payments**: A custom `/pay-selected` endpoint allows applying partial lump-sum payments to specific selected paddles. The backend loops through the selected items and applies the payment amount, marking them `FULL` or `PARTIAL` until the budget is exhausted. The frontend prevents submitting custom amounts that exceed the total balance of the selected paddles to prevent lost funds.
 
 ## 3. Database Reconciliations (Warning)
 - If the user physically counts stock and wants to update the database manually via Supabase, they **must** update `stock_batches.remaining_quantity`. 
