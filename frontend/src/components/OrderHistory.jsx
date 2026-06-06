@@ -375,7 +375,9 @@ const OrderHistory = () => {
 
     const handleCalendarApply = (start, end) => {
         const label = `${start.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })} – ${end.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}`;
-        setCustomRange({ start, end, label });
+        const endDay = new Date(end.getTime());
+        endDay.setHours(23, 59, 59, 999);
+        setCustomRange({ start, end: endDay, label });
         setActivePreset(null);
         setShowCalendar(false);
     };
