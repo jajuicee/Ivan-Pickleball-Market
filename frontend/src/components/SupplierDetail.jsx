@@ -62,8 +62,12 @@ const SupplierDetail = ({ supplier, startDate, endDate, onClose, onEdit }) => {
     useEffect(() => {
         if (!supplier) return;
         setLoading(true);
-        const s = startDate.toISOString().split('.')[0];
-        const e = endDate.toISOString().split('.')[0];
+        const fmt = (d) => {
+            const pad = (n) => n.toString().padStart(2, '0');
+            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+        };
+        const s = fmt(startDate);
+        const e = fmt(endDate);
         axios.get(`${API}/${supplier.id}/purchases?start=${s}&end=${e}`)
             .then(r => setPurchases(Array.isArray(r.data) ? r.data : []))
             .catch(err => {

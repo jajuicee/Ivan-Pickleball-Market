@@ -45,8 +45,12 @@ const Suppliers = () => {
 
     const fetchAll = async () => {
         try {
-            const s = startDate.toISOString().split('.')[0];
-            const e = endDate.toISOString().split('.')[0];
+            const fmt = (d) => {
+                const pad = (n) => n.toString().padStart(2, '0');
+                return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+            };
+            const s = fmt(startDate);
+            const e = fmt(endDate);
             const [listRes, statsRes] = await Promise.all([
                 axios.get(`${API}/with-stats?start=${s}&end=${e}`),
                 axios.get(`${API}/stats?start=${s}&end=${e}`),

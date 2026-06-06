@@ -395,7 +395,11 @@ const OrderHistory = () => {
     const buildFetchUrl = (preset, custom) => {
         const base = `http://${window.location.hostname}:8080/api/transactions`;
         const now = new Date();
-        const fmt = (d) => d.toISOString().slice(0, 19); // LocalDateTime format
+        // Convert to local time string matching LocalDateTime (YYYY-MM-DDTHH:mm:ss)
+        const fmt = (d) => {
+            const pad = (n) => n.toString().padStart(2, '0');
+            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+        };
 
         if (custom) {
             const from = fmt(custom.start);
