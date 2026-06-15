@@ -15,6 +15,8 @@ const Inventory = ({ products = [], loading = false }) => {
 
     // --- TABLE FILTER ---
     const [tableFilter, setTableFilter] = useState('');
+    const [sortOrder, setSortOrder] = useState('name-asc');
+    const [categoryFilter, setCategoryFilter] = useState('All'); // All, Paddles, Accessories
     const [stockFilter, setStockFilter] = useState('all'); // all | low | out
 
     // --- FLATTEN DATA ---
@@ -69,18 +71,35 @@ const Inventory = ({ products = [], loading = false }) => {
     }, [flattenedInventory]);
 
     const filteredInventory = useMemo(() => {
-        let list = flattenedInventory;
+        let list = [...flattenedInventory];
+        
+        if (categoryFilter !== 'All') {
+            list = list.filter(i => i.category === categoryFilter);
+        }
+
         if (stockFilter === 'low') list = list.filter(i => i.isLowStock);
         else if (stockFilter === 'out') list = list.filter(i => i.isOutOfStock);
-        if (!tableFilter.trim()) return list;
-        const q = tableFilter.toLowerCase();
-        return list.filter(item =>
-            (item.sku || '').toLowerCase().includes(q) ||
-            (item.brand || '').toLowerCase().includes(q) ||
-            (item.name || '').toLowerCase().includes(q) ||
-            (item.dropdownName || '').toLowerCase().includes(q)
-        );
-    }, [tableFilter, stockFilter, flattenedInventory]);
+        
+        if (tableFilter.trim()) {
+            const q = tableFilter.toLowerCase();
+            list = list.filter(item =>
+                (item.sku || '').toLowerCase().includes(q) ||
+                (item.brand || '').toLowerCase().includes(q) ||
+                (item.name || '').toLowerCase().includes(q) ||
+                (item.dropdownName || '').toLowerCase().includes(q)
+            );
+        }
+
+        list.sort((a, b) => {
+            if (sortOrder === 'stock-asc') return a.quantity - b.quantity;
+            if (sortOrder === 'stock-desc') return b.quantity - a.quantity;
+            if (sortOrder === 'name-asc') return a.dropdownName.localeCompare(b.dropdownName);
+            if (sortOrder === 'name-desc') return b.dropdownName.localeCompare(a.dropdownName);
+            return 0;
+        });
+
+        return list;
+    }, [tableFilter, stockFilter, sortOrder, flattenedInventory]);
 
     const searchSummary = useMemo(() => {
         if (!tableFilter.trim()) return null;
@@ -120,7 +139,34 @@ const Inventory = ({ products = [], loading = false }) => {
                     )}
                 </h2>
 
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto mt-2 sm:mt-0 justify-end">
+                    <div className="flex bg-stone-200/50 p-1.5 rounded-xl border border-stone-200 mr-auto sm:mr-0 h-[38px] items-center">
+                        {['All', 'Paddles', 'Accessories'].map(cat => (
+                            <button
+                                key={cat}
+                                onClick={() => { setCategoryFilter(cat); setDisplayedCount(15); }}
+                                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                                    categoryFilter === cat 
+                                        ? 'bg-white text-zinc-900 shadow-sm border border-stone-200' 
+                                        : 'text-zinc-500 hover:text-zinc-700'
+                                }`}
+                            >
+                                {cat}
+                            </button>
+                        ))}
+                    </div>
+                    <div className="relative flex-1 sm:flex-none">
+                        <select
+                            value={sortOrder}
+                            onChange={(e) => setSortOrder(e.target.value)}
+                            className="pl-3 pr-8 py-2 text-sm border border-stone-300 rounded-lg focus:ring-2 focus:ring-zinc-900 outline-none bg-white font-bold text-zinc-600 h-[38px]"
+                        >
+                            <option value="name-asc">Name (A-Z)</option>
+                            <option value="name-desc">Name (Z-A)</option>
+                            <option value="stock-asc">Stock (Low to High)</option>
+                            <option value="stock-desc">Stock (High to Low)</option>
+                        </select>
+                    </div>
                     <div className="relative">
                         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                             <Search size={15} className="text-zinc-400" />
@@ -130,7 +176,7 @@ const Inventory = ({ products = [], loading = false }) => {
                             value={tableFilter}
                             onChange={e => { setTableFilter(e.target.value); setDisplayedCount(15); }}
                             placeholder="Filter by SKU, brand, name…"
-                            className="pl-9 pr-3 py-2 text-sm border border-stone-300 rounded-lg focus:ring-2 focus:ring-zinc-900 outline-none w-60"
+                            className="pl-9 pr-8 py-2 text-sm border border-stone-300 rounded-lg focus:ring-2 focus:ring-zinc-900 outline-none w-60 h-[38px]"
                         />
                         {tableFilter && (
                             <button

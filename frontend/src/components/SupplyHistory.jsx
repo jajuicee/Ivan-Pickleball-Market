@@ -19,6 +19,8 @@ const SupplyHistory = () => {
     const [loading, setLoading] = useState(true);
     const [expandedBatchId, setExpandedBatchId] = useState(null);
     const [statusFilter, setStatusFilter] = useState('ALL'); // ALL, INCOMING, RECEIVED
+    const [startDate, setStartDate] = useState('');
+    const [endDate, setEndDate] = useState('');
 
     const fetchHistory = async () => {
         setLoading(true);
@@ -63,8 +65,23 @@ const SupplyHistory = () => {
     const fmtPrice = (val) => val != null ? `₱${Number(val).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '—';
 
     const filteredBatches = batches.filter(b => {
-        if (statusFilter === 'ALL') return true;
-        return b.status === statusFilter;
+        if (statusFilter !== 'ALL' && b.status !== statusFilter) return false;
+
+        if (startDate || endDate) {
+            const bDate = new Date(b.date);
+            if (startDate) {
+                const sDate = new Date(startDate);
+                sDate.setHours(0, 0, 0, 0);
+                if (bDate < sDate) return false;
+            }
+            if (endDate) {
+                const eDate = new Date(endDate);
+                eDate.setHours(23, 59, 59, 999);
+                if (bDate > eDate) return false;
+            }
+        }
+        
+        return true;
     });
 
     return (
@@ -75,20 +92,49 @@ const SupplyHistory = () => {
                     <h2 className="text-2xl font-black text-zinc-800 tracking-tight">Supply History</h2>
                 </div>
 
-                <div className="flex bg-stone-200/50 p-1.5 rounded-xl border border-stone-200">
-                    {['ALL', 'INCOMING', 'RECEIVED'].map(filter => (
-                        <button
-                            key={filter}
-                            onClick={() => setStatusFilter(filter)}
-                            className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${
-                                statusFilter === filter 
-                                    ? 'bg-white text-zinc-900 shadow-sm border border-stone-200' 
-                                    : 'text-zinc-500 hover:text-zinc-700'
-                            }`}
-                        >
-                            {filter}
-                        </button>
-                    ))}
+                <div className="flex items-center gap-4 flex-wrap justify-end">
+                    <div className="flex items-center gap-2 bg-white border border-stone-200 rounded-xl px-3 py-1.5 shadow-sm">
+                        <label className="text-xs font-bold text-zinc-500 uppercase">From</label>
+                        <input 
+                            type="date" 
+                            value={startDate} 
+                            onChange={e => setStartDate(e.target.value)}
+                            className="bg-transparent border-none outline-none text-sm font-bold text-zinc-700 cursor-pointer"
+                        />
+                        <span className="text-stone-300 mx-1">|</span>
+                        <label className="text-xs font-bold text-zinc-500 uppercase">To</label>
+                        <input 
+                            type="date" 
+                            value={endDate} 
+                            onChange={e => setEndDate(e.target.value)}
+                            className="bg-transparent border-none outline-none text-sm font-bold text-zinc-700 cursor-pointer"
+                        />
+                        {(startDate || endDate) && (
+                            <button 
+                                onClick={() => { setStartDate(''); setEndDate(''); }}
+                                className="ml-2 text-zinc-400 hover:text-red-500 transition-colors"
+                                title="Clear dates"
+                            >
+                                ✕
+                            </button>
+                        )}
+                    </div>
+
+                    <div className="flex bg-stone-200/50 p-1.5 rounded-xl border border-stone-200">
+                        {['ALL', 'INCOMING', 'RECEIVED'].map(filter => (
+                            <button
+                                key={filter}
+                                onClick={() => setStatusFilter(filter)}
+                                className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${
+                                    statusFilter === filter 
+                                        ? 'bg-white text-zinc-900 shadow-sm border border-stone-200' 
+                                        : 'text-zinc-500 hover:text-zinc-700'
+                                }`}
+                            >
+                                {filter}
+                            </button>
+                        ))}
+                    </div>
                 </div>
             </div>
 

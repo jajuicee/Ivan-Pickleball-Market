@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import axios from 'axios';
 import {
     PackagePlus, Search, User, CreditCard, Tag, X,
@@ -77,6 +77,12 @@ const BatchAddModal = ({ products = [], suppliers = [], onClose, onSuccess }) =>
     // ── Math ──────────────────────────────────────────────────────────────────
     const totalItems = cart.reduce((sum, item) => sum + (parseInt(item.qty) || 0), 0);
     const cartBaseTotal = cart.reduce((sum, item) => sum + ((parseFloat(item.baseCost) || 0) * (parseInt(item.qty) || 0)), 0);
+
+    // Auto-update total expense when cart items/costs change
+    useEffect(() => {
+        setFormData(f => ({ ...f, totalExpense: cartBaseTotal === 0 ? '' : cartBaseTotal.toString() }));
+    }, [cartBaseTotal]);
+
     const parsedTotalExpense = parseFloat(formData.totalExpense) || 0;
 
     // ── Submit ────────────────────────────────────────────────────────────────

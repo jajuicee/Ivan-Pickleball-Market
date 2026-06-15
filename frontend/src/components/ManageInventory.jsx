@@ -17,6 +17,8 @@ const formatPHP = (n) =>
 const ManageInventory = ({ products = [], loading = false, refetchProducts }) => {
     const [suppliers, setSuppliers] = useState([]);
     const [tableFilter, setTableFilter] = useState('');
+    const [sortOrder, setSortOrder] = useState('name-asc');
+    const [categoryFilter, setCategoryFilter] = useState('All'); // All, Paddles, Accessories
     const [displayedCount, setDisplayedCount] = useState(20);
     const tableContainerRef = useRef(null);
 
@@ -104,16 +106,33 @@ const ManageInventory = ({ products = [], loading = false, refetchProducts }) =>
     }, [products]);
 
     const filteredInventory = useMemo(() => {
-        if (!tableFilter.trim()) return flattenedInventory;
-        const q = tableFilter.toLowerCase();
-        return flattenedInventory.filter(item =>
-            (item.sku || '').toLowerCase().includes(q) ||
-            (item.brand || '').toLowerCase().includes(q) ||
-            (item.name || '').toLowerCase().includes(q) ||
-            (item.dropdownName || '').toLowerCase().includes(q) ||
-            (item.defaultSupplier?.name || '').toLowerCase().includes(q)
-        );
-    }, [tableFilter, flattenedInventory]);
+        let result = [...flattenedInventory];
+        
+        if (categoryFilter !== 'All') {
+            result = result.filter(item => item.category === categoryFilter);
+        }
+
+        if (tableFilter.trim()) {
+            const q = tableFilter.toLowerCase();
+            result = result.filter(item =>
+                (item.sku || '').toLowerCase().includes(q) ||
+                (item.brand || '').toLowerCase().includes(q) ||
+                (item.name || '').toLowerCase().includes(q) ||
+                (item.dropdownName || '').toLowerCase().includes(q) ||
+                (item.defaultSupplier?.name || '').toLowerCase().includes(q)
+            );
+        }
+
+        result.sort((a, b) => {
+            if (sortOrder === 'stock-asc') return a.quantity - b.quantity;
+            if (sortOrder === 'stock-desc') return b.quantity - a.quantity;
+            if (sortOrder === 'name-asc') return a.dropdownName.localeCompare(b.dropdownName);
+            if (sortOrder === 'name-desc') return b.dropdownName.localeCompare(a.dropdownName);
+            return 0;
+        });
+
+        return result;
+    }, [tableFilter, sortOrder, flattenedInventory]);
 
     const visibleData = filteredInventory.slice(0, displayedCount);
 
@@ -275,13 +294,40 @@ const ManageInventory = ({ products = [], loading = false, refetchProducts }) =>
                         </span>
                     )}
                 </h2>
-                <div className="flex items-center gap-3 w-full sm:w-auto">
+                <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto justify-end">
                     <button
                         onClick={() => setShowBatchAdd(true)}
                         className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-lg shadow-sm transition-colors"
                     >
                         <PackagePlus size={16} /> Batch Add
                     </button>
+                    <div className="flex bg-stone-200/50 p-1.5 rounded-xl border border-stone-200 mr-auto sm:mr-0 h-[38px] items-center">
+                        {['All', 'Paddles', 'Accessories'].map(cat => (
+                            <button
+                                key={cat}
+                                onClick={() => { setCategoryFilter(cat); setDisplayedCount(20); }}
+                                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                                    categoryFilter === cat 
+                                        ? 'bg-white text-zinc-900 shadow-sm border border-stone-200' 
+                                        : 'text-zinc-500 hover:text-zinc-700'
+                                }`}
+                            >
+                                {cat}
+                            </button>
+                        ))}
+                    </div>
+                    <div className="relative flex-1 sm:flex-none">
+                        <select
+                            value={sortOrder}
+                            onChange={(e) => setSortOrder(e.target.value)}
+                            className="pl-3 pr-8 py-2 text-sm border border-stone-300 rounded-lg focus:ring-2 focus:ring-zinc-900 outline-none bg-white font-bold text-zinc-600 h-[38px]"
+                        >
+                            <option value="name-asc">Name (A-Z)</option>
+                            <option value="name-desc">Name (Z-A)</option>
+                            <option value="stock-asc">Stock (Low to High)</option>
+                            <option value="stock-desc">Stock (High to Low)</option>
+                        </select>
+                    </div>
                     <div className="relative flex-1 sm:flex-none">
                         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                             <Search size={15} className="text-zinc-400" />
@@ -291,7 +337,7 @@ const ManageInventory = ({ products = [], loading = false, refetchProducts }) =>
                             value={tableFilter}
                             onChange={e => { setTableFilter(e.target.value); setDisplayedCount(20); }}
                             placeholder="Filter by SKU, brand, supplier…"
-                            className="pl-9 pr-8 py-2 text-sm border border-stone-300 rounded-lg focus:ring-2 focus:ring-zinc-900 outline-none w-64"
+                            className="pl-9 pr-8 py-2 text-sm border border-stone-300 rounded-lg focus:ring-2 focus:ring-zinc-900 outline-none w-64 h-[38px]"
                         />
                         {tableFilter && (
                             <button onClick={() => setTableFilter('')} className="absolute inset-y-0 right-0 pr-3 flex items-center text-zinc-400 hover:text-zinc-700">

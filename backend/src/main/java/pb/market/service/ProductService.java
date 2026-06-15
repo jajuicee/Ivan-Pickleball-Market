@@ -67,6 +67,7 @@ public class ProductService {
         productRepository.deleteById(id);
     }
 
+    @Transactional(readOnly = true)
     public List<Product> getAllProducts() {
         List<Product> products = productRepository.findAllWithVariants();
         if (products.isEmpty()) return products;
