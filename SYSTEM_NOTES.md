@@ -16,6 +16,7 @@
   - This dedicated tab manages partial payments and returns for consigned stock.
   - **Returns**: Returning a paddle via `/api/transactions/{id}/return` permanently deletes that single transaction row and uses `Pessimistic Write Locks` to safely restore exactly +1 to the `remainingQuantity` of the original `StockBatch` it was deducted from.
   - **Partial/Custom Payments**: A custom `/pay-selected` endpoint allows applying partial lump-sum payments to specific selected paddles. The backend loops through the selected items and applies the payment amount, marking them `FULL` or `PARTIAL` until the budget is exhausted. The frontend prevents submitting custom amounts that exceed the total balance of the selected paddles to prevent lost funds.
+  - **Safe Deletion**: Deleting a consignee is blocked if they have any associated past transactions, to preserve business records and prevent orphaned data.
 
 ## 3. Database Reconciliations (Warning)
 - If the user physically counts stock and wants to update the database manually via Supabase, they **must** update `stock_batches.remaining_quantity`. 
@@ -24,6 +25,9 @@
 ## 4. Payment Types
 - Transactions support `FULL`, `PARTIAL`, and `UNPAID` statuses. 
 - Partial payments are handled by tracking the `downpayment` compared to the `finalPrice`. 
+- **Payment Logs**: Every time a payment is made (whether immediately at checkout, or days later), a `PaymentLog` is created. This allows the system to accurately track *when* money was received.
+- **Timeline Integration**: In `OrderHistory.jsx`, orders and their associated payments are visually interleaved using a combined timeline logic. If an order from last week is paid today, the payment record "pops up" in today's view for easy accounting verification.
+- **Credit Card** has been integrated natively into checkout forms and filter lists, alongside GCash, Cash, BDO, etc.
 - `OrderHistory.jsx` groups individual `Transaction` rows by their `transactionId` (UUID) to display them as a single unified receipt. Legacy orders that didn't have UUIDs are grouped by `LEGACY-{id}`.
 
 ## 5. Development 

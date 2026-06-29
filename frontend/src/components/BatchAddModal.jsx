@@ -28,12 +28,15 @@ const BatchAddModal = ({ products = [], suppliers = [], onClose, onSuccess }) =>
 
     // ── Product search ────────────────────────────────────────────────────────
     const inventoryList = useMemo(() =>
-        products.flatMap(p => (p.variants || []).map(v => ({
-            ...v,
-            brandName: p.brandName,
-            modelName: p.modelName,
-            displayName: `${p.brandName} ${p.modelName}${v.color && v.color !== 'N/A' ? ` (${v.color})` : ''}`
-        }))),
+        products.flatMap(p => (p.variants || []).map(v => {
+            const isShoe = p.category === 'Shoes';
+            return {
+                ...v,
+                brandName: p.brandName,
+                modelName: p.modelName,
+                displayName: `${p.brandName} ${p.modelName}${v.color && v.color !== 'N/A' ? ` (${v.color})` : ''}${isShoe && v.shape ? ` Size ${v.shape}` : ''}`
+            };
+        })).sort((a, b) => a.displayName.localeCompare(b.displayName, undefined, { numeric: true })),
     [products]);
 
     const filteredResults = useMemo(() => {

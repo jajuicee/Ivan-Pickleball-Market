@@ -262,10 +262,11 @@ const EditPaymentModal = ({ group, methods, onSave, onClose }) => {
         methods.includes(group.paymentMethod) ? '' : (group.paymentMethod || '')
     );
     const [isCustom, setIsCustom] = useState(!methods.includes(group.paymentMethod));
+    const [updateLogs, setUpdateLogs] = useState(true);
 
     const handleSubmit = () => {
         const final = isCustom ? custom.trim() : value;
-        if (final) onSave(final);
+        if (final) onSave(final, updateLogs);
     };
 
     return (
@@ -318,6 +319,19 @@ const EditPaymentModal = ({ group, methods, onSave, onClose }) => {
                         className="w-full px-3 py-2 text-xs border border-stone-300 rounded-lg mb-3 focus:outline-none focus:ring-2 focus:ring-zinc-300"
                     />
                 )}
+                <label className="flex items-start gap-2 mt-1 mb-4 cursor-pointer group">
+                    <div className="pt-0.5">
+                        <input
+                            type="checkbox"
+                            checked={updateLogs}
+                            onChange={(e) => setUpdateLogs(e.target.checked)}
+                            className="w-3.5 h-3.5 rounded text-blue-600 focus:ring-blue-500 border-stone-300"
+                        />
+                    </div>
+                    <span className="text-[10px] text-zinc-500 font-medium group-hover:text-zinc-700 transition-colors leading-snug">
+                        Apply to associated payment logs
+                    </span>
+                </label>
                 <div className="flex gap-2">
                     <button onClick={onClose} className="flex-1 py-2 text-xs font-bold rounded-lg border border-stone-200 text-zinc-500 hover:bg-stone-50 transition-colors">Cancel</button>
                     <button onClick={handleSubmit} className="flex-1 py-2 text-xs font-bold rounded-lg bg-zinc-950 text-white hover:bg-zinc-800 transition-colors">Save</button>
@@ -331,12 +345,15 @@ const EditPaymentModal = ({ group, methods, onSave, onClose }) => {
 
 const OrderHistory = () => {
     const [transactions, setTransactions] = useState([]);
+    const [paymentLogs, setPaymentLogs] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [filter, setFilter] = useState(STATUS_ALL);
     const [completing, setCompleting] = useState(null);
     const [cancelling, setCancelling] = useState(null);
     const [expanded, setExpanded] = useState(new Set());
+    // Separate toggle for payment log rows under each order
+    const [payLogsExpanded, setPayLogsExpanded] = useState(new Set());
     const [noteModal, setNoteModal] = useState(null);
     const [paymentFilter, setPaymentFilter] = useState('All');
     const [editingPayment, setEditingPayment] = useState(null); // orderId being edited
@@ -393,6 +410,36 @@ const OrderHistory = () => {
         setExpanded(next);
     };
 
+    const togglePayLogs = (id) => {
+        const next = new Set(payLogsExpanded);
+        if (next.has(id)) next.delete(id); else next.add(id);
+        setPayLogsExpanded(next);
+    };
+
+    // Scroll to an ORDER row by id, switching to All Time first if it isn't in the DOM
+    const scrollToOrder = (orderId) => {
+        const doScroll = () => {
+            const el = document.getElementById(`order-row-${orderId}`);
+            if (!el) return;
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            el.classList.remove('order-highlight-flash');
+            // Force reflow so re-adding the class restarts the animation
+            void el.offsetWidth;
+            el.classList.add('order-highlight-flash');
+            setTimeout(() => el.classList.remove('order-highlight-flash'), 1500);
+        };
+
+        const el = document.getElementById(`order-row-${orderId}`);
+        if (el) {
+            doScroll();
+        } else {
+            // Order row not rendered under current filter — expand to All Time then retry
+            setActivePreset('ALL');
+            setCustomRange(null);
+            setTimeout(doScroll, 400);
+        }
+    };
+
     // Build fetch URL from a preset id or custom range
     const buildFetchUrl = (preset, custom) => {
         const base = `http://${window.location.hostname}:8080/api/transactions`;
@@ -405,13 +452,13 @@ const OrderHistory = () => {
 
         if (custom) {
             const from = fmt(custom.start);
-            const to   = fmt(new Date(custom.end.getTime()));
+            const to = fmt(new Date(custom.end.getTime()));
             return `${base}?from=${from}&to=${to}&limit=5000`;
         }
         switch (preset) {
             case 'TODAY': {
                 const from = fmt(new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0));
-                const to   = fmt(new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59));
+                const to = fmt(new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59));
                 return `${base}?from=${from}&to=${to}&limit=300`;
             }
             case '1W': {
@@ -422,12 +469,12 @@ const OrderHistory = () => {
             }
             case '1M': {
                 const from = fmt(new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0));
-                const to   = fmt(new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59));
+                const to = fmt(new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59));
                 return `${base}?from=${from}&to=${to}&limit=5000`;
             }
             case '1Y': {
                 const from = fmt(new Date(now.getFullYear(), 0, 1, 0, 0, 0));
-                const to   = fmt(new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59));
+                const to = fmt(new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59));
                 return `${base}?from=${from}&to=${to}&limit=10000`;
             }
             default: // ALL
@@ -439,8 +486,23 @@ const OrderHistory = () => {
         const url = buildFetchUrl(preset ?? activePreset, custom !== undefined ? custom : customRange);
         setLoading(true);
         setError('');
-        axios.get(url)
-            .then(res => setTransactions(Array.isArray(res.data) ? res.data : []))
+
+        // Build matching date params for payment-logs from the transaction URL
+        const urlObj = new URL(url, 'http://localhost');
+        const plFrom = urlObj.searchParams.get('from');
+        const plTo   = urlObj.searchParams.get('to');
+        const plUrl  = plFrom && plTo
+            ? `http://${window.location.hostname}:8080/api/payment-logs?from=${plFrom}&to=${plTo}`
+            : `http://${window.location.hostname}:8080/api/payment-logs`;
+
+        Promise.all([
+            axios.get(url),
+            axios.get(plUrl)
+        ])
+            .then(([txRes, plRes]) => {
+                setTransactions(Array.isArray(txRes.data) ? txRes.data : []);
+                setPaymentLogs(Array.isArray(plRes.data) ? plRes.data : []);
+            })
             .catch(() => setError('Could not load order history. Is the backend running?'))
             .finally(() => setLoading(false));
     };
@@ -531,7 +593,7 @@ const OrderHistory = () => {
         }
     };
 
-    const handleUpdatePayment = async (group, newMethod) => {
+    const handleUpdatePayment = async (group, newMethod, updateLogs) => {
         setEditingPayment(null);
         // Fix #7: Optimistic update handles both LEGACY and normal orders
         setTransactions(prev =>
@@ -541,7 +603,7 @@ const OrderHistory = () => {
             })
         );
         try {
-            await axios.patch(`http://${window.location.hostname}:8080/api/transactions/group/${group.orderId}/payment`, { paymentMethod: newMethod });
+            await axios.patch(`http://${window.location.hostname}:8080/api/transactions/group/${group.orderId}/payment`, { paymentMethod: newMethod, updateLogs });
             fetchTransactions();
         } catch {
             setError('Could not update payment method.');
@@ -555,16 +617,11 @@ const OrderHistory = () => {
         return null;
     }, [activePreset, customRange]);
 
-    const groupedOrders = useMemo(() => {
+    const timelineItems = useMemo(() => {
         const q = searchQuery.trim().toLowerCase();
-        const sourceTxs = (isSearching || !dateWindow)
-            ? transactions
-            : transactions.filter(t => {
-                const d = new Date(t.transactionDate);
-                return d >= dateWindow.start && d <= dateWindow.end;
-            });
-
-        const groups = sourceTxs.reduce((acc, t) => {
+        
+        // We use transactions directly since the backend now returns all active orders (created OR paid in range)
+        const groups = transactions.reduce((acc, t) => {
             const key = t.transactionId || `LEGACY-${t.id}`;
             if (!acc[key]) {
                 acc[key] = {
@@ -577,6 +634,7 @@ const OrderHistory = () => {
                     status: t.status,
                     date: t.transactionDate,
                     items: [],
+                    paymentLogs: [],
                     totalPrice: 0,
                     totalDownpayment: 0
                 };
@@ -589,10 +647,56 @@ const OrderHistory = () => {
             return acc;
         }, {});
 
-        let allGroups = Object.values(groups).sort((a, b) => new Date(b.date) - new Date(a.date));
+        // Attach payment logs to groups
+        paymentLogs.forEach(pl => {
+            const gid = pl.orderId;
+            if (groups[gid]) {
+                groups[gid].paymentLogs.push(pl);
+            }
+        });
+
+        // Sort payment logs descending inside each group
+        Object.values(groups).forEach(g => {
+            g.paymentLogs.sort((a, b) => new Date(b.paymentDate) - new Date(a.paymentDate));
+        });
+
+        let items = [];
+
+        Object.values(groups).forEach(g => {
+            // Check if order was placed in date window
+            const orderDate = new Date(g.date);
+            const inWindow = (!dateWindow || (orderDate >= dateWindow.start && orderDate <= dateWindow.end));
+            if (inWindow || isSearching) {
+                items.push({
+                    type: 'ORDER',
+                    sortDate: orderDate,
+                    data: g
+                });
+            }
+
+            // Only inject LATE_PAYMENT_REF items (ORDER + LATE_PAYMENT_REF is all we need in the
+            // sorted array — PAYMENT rows are rendered inline inside each ORDER's Fragment so they
+            // never bloat the sort/filter loop).
+            g.paymentLogs.forEach(p => {
+                const payDate = new Date(p.paymentDate);
+                const orderDateLocal = new Date(g.date);
+                const isLate = (payDate.getTime() - orderDateLocal.getTime()) > 30_000;
+                const payInWindow = (!dateWindow || (payDate >= dateWindow.start && payDate <= dateWindow.end));
+
+                if (isLate && (payInWindow || isSearching)) {
+                    items.push({
+                        type: 'LATE_PAYMENT_REF',
+                        sortDate: payDate,
+                        data: g,
+                        paymentLog: p
+                    });
+                }
+            });
+        });
 
         if (isSearching) {
-            allGroups = allGroups.filter(g => {
+            items = items.filter(item => {
+                const g = item.data;
                 const productNames = g.items.map(i =>
                     i.variant?.product
                         ? `${i.variant.product.brandName} ${i.variant.product.modelName} ${i.variant?.color || ''}`.toLowerCase()
@@ -610,13 +714,26 @@ const OrderHistory = () => {
         }
 
         if (paymentFilter !== 'All') {
-            allGroups = allGroups.filter(g => g.paymentMethod === paymentFilter);
+            // Only ORDER items carry paymentMethod at the group level;
+            // LATE_PAYMENT_REF items pass through so they stay visible.
+            items = items.filter(item => {
+                if (item.type === 'ORDER') return item.data.paymentMethod === paymentFilter;
+                return true;
+            });
         }
 
-        if (filter === STATUS_ALL) return allGroups;
-        if (filter === STATUS_UNPAID) return allGroups.filter(g => g.status === 'UNPAID' || g.status === 'PARTIAL');
-        return allGroups.filter(g => g.status === filter);
-    }, [filter, transactions, dateWindow, searchQuery, isSearching, paymentFilter]);
+        if (filter !== STATUS_ALL) {
+            if (filter === STATUS_UNPAID) {
+                items = items.filter(item => item.data.status === 'UNPAID' || item.data.status === 'PARTIAL');
+            } else {
+                items = items.filter(item => item.data.status === filter);
+            }
+        }
+
+        // Simple descending sort — only ORDER and LATE_PAYMENT_REF items remain,
+        // each carrying their own meaningful sortDate, so no anchoring needed.
+        return items.sort((a, b) => b.sortDate - a.sortDate);
+    }, [filter, transactions, dateWindow, searchQuery, isSearching, paymentFilter, paymentLogs]);
 
     const counts = useMemo(() => {
         const windowedTxs = dateWindow
@@ -670,6 +787,19 @@ const OrderHistory = () => {
                 @keyframes toastIn {
                     from { opacity: 0; transform: translateY(16px) scale(0.97); }
                     to   { opacity: 1; transform: translateY(0) scale(1); }
+                }
+                @keyframes orderHighlight {
+                    0%   { background-color: inherit; }
+                    20%  { background-color: #fef08a; }
+                    80%  { background-color: #fef08a; }
+                    100% { background-color: inherit; }
+                }
+                .order-highlight-flash {
+                    animation: orderHighlight 1.4s ease !important;
+                }
+                /* Applied once via className — never re-applied by React inline styles */
+                .order-row-anim {
+                    animation: fadeSlideIn 200ms ease both;
                 }
             `}</style>
 
@@ -730,13 +860,13 @@ const OrderHistory = () => {
                 >
                     {isSearching ? (
                         <>
-                            <span className="text-zinc-700">{groupedOrders.length} results</span>
+                            <span className="text-zinc-700">{timelineItems.length} items</span>
                             <span className="mx-2 text-zinc-300">·</span>
                             <span>Searching all dates for "{searchQuery.trim()}"</span>
                         </>
                     ) : (
                         <>
-                            <span className="text-zinc-700">{groupedOrders.length} orders</span>
+                            <span className="text-zinc-700">{timelineItems.filter(i => i.type === 'ORDER').length} orders</span>
                             {periodLabel && (
                                 <>
                                     <span className="mx-2 text-zinc-300">·</span>
@@ -929,7 +1059,7 @@ const OrderHistory = () => {
                                     ))}
                                 </tr>
                             ))
-                        ) : groupedOrders.length === 0 ? (
+                        ) : timelineItems.length === 0 ? (
                             <tr>
                                 <td
                                     colSpan="10"
@@ -955,49 +1085,170 @@ const OrderHistory = () => {
                                 </td>
                             </tr>
                         ) : (
-                            groupedOrders.map((group, rowIdx) => {
+                            timelineItems.map((item, rowIdx) => {
+                                // ── LATE PAYMENT REFERENCE ROW ──────────────────────────────────
+                                if (item.type === 'LATE_PAYMENT_REF') {
+                                    const log = item.paymentLog;
+                                    const group = item.data;
+                                    const orderDateLabel = new Date(group.date).toLocaleDateString('en-PH', {
+                                        month: 'short', day: 'numeric', year: 'numeric'
+                                    });
+                                    return (
+                                        <tr
+                                            key={`late-ref-${log.id}`}
+                                            style={{
+                                                animation: 'fadeSlideIn 220ms ease both',
+                                                animationDelay: `${Math.min(rowIdx * 20, 250)}ms`,
+                                                background: 'linear-gradient(90deg, #fffbeb 0%, #fefce8 100%)',
+                                                borderLeft: '3px solid #f59e0b',
+                                            }}
+                                        >
+                                            {/* indent + icon */}
+                                            <td className="px-5 py-3">
+                                                <span style={{ color: '#d97706', display: 'flex', justifyContent: 'center' }}>
+                                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                                        <polyline points="15 10 20 15 15 20"/>
+                                                        <path d="M4 4v7a4 4 0 0 0 4 4h12"/>
+                                                    </svg>
+                                                </span>
+                                            </td>
+                                            {/* order id ref */}
+                                            <td className="px-5 py-3">
+                                                <span
+                                                    className="font-mono text-xs font-black"
+                                                    style={{ color: '#92400e' }}
+                                                >
+                                                    #{group.displayId}
+                                                </span>
+                                                <span
+                                                    className="block text-[10px] font-bold mt-0.5"
+                                                    style={{ color: '#b45309' }}
+                                                >
+                                                    late payment
+                                                </span>
+                                            </td>
+                                            {/* customer */}
+                                            <td className="px-5 py-3 text-xs font-medium" style={{ color: '#78350f' }}>
+                                                {group.customerName}
+                                            </td>
+                                            {/* description */}
+                                            <td className="px-5 py-3" colSpan={2}>
+                                                <span
+                                                    className="inline-flex items-center gap-1.5 text-[11px] font-bold px-2 py-1 rounded"
+                                                    style={{ backgroundColor: '#fde68a', color: '#78350f' }}
+                                                >
+                                                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                                        <path d="M5 12h14M12 5l7 7-7 7"/>
+                                                    </svg>
+                                                    Order from {orderDateLabel}
+                                                </span>
+                                            </td>
+                                            {/* status badge */}
+                                            <td className="px-5 py-3">
+                                                <span
+                                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] uppercase tracking-wider font-bold"
+                                                    style={{ backgroundColor: '#fde68a', color: '#78350f' }}
+                                                >
+                                                    <CreditCard size={10} /> {log.paymentMethod || 'Unknown'}
+                                                </span>
+                                            </td>
+                                            {/* empty downpayment */}
+                                            <td className="px-5 py-3 text-right font-mono text-xs" style={{ color: '#92400e' }}>—</td>
+                                            {/* amount */}
+                                            <td className="px-5 py-3 text-right font-mono">
+                                                <span className="font-black text-sm" style={{ color: '#16a34a' }}>+{formatCurrency(log.amount)}</span>
+                                            </td>
+                                            {/* payment date */}
+                                            <td className="px-5 py-3 text-xs font-medium" style={{ color: '#92400e' }}>
+                                                {formatDate(log.paymentDate)}
+                                            </td>
+                                            <td className="px-5 py-3">
+                                                <button
+                                                    onClick={() => scrollToOrder(group.orderId)}
+                                                    title="Jump to the original order row"
+                                                    className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-md"
+                                                    style={{
+                                                        backgroundColor: '#fde68a',
+                                                        color: '#78350f',
+                                                        border: '1px solid #f59e0b',
+                                                        transition: 'background-color 120ms ease',
+                                                    }}
+                                                    onMouseEnter={e => e.currentTarget.style.backgroundColor = '#fcd34d'}
+                                                    onMouseLeave={e => e.currentTarget.style.backgroundColor = '#fde68a'}
+                                                >
+                                                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                                        <line x1="5" y1="12" x2="19" y2="12"/>
+                                                        <polyline points="12 5 19 12 12 19"/>
+                                                    </svg>
+                                                    Go to Order
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    );
+                                }
+
+                                // PAYMENT rows are now rendered inline inside the ORDER Fragment below.
+
+                                const group = item.data;
                                 const isUnfinished = group.status === 'PARTIAL' || group.status === 'UNPAID';
                                 // remaining is computed by taking totalPrice of ALL items in the order,
                                 // minus the downpayment (if any), and minus the price of fully paid items.
                                 const paidItemsValue = group.items.filter(i => i.status === 'FULL').reduce((sum, i) => sum + parseFloat(i.finalPrice || 0), 0);
-                                const remaining = isUnfinished 
+                                const remaining = isUnfinished
                                     ? group.totalPrice - group.totalDownpayment - paidItemsValue
                                     : null;
                                 const isExpanded = expanded.has(group.orderId);
 
                                 return (
-                                    <React.Fragment key={group.orderId}>
+                                    <React.Fragment key={`order-${group.orderId}`}>
                                         <tr
-                                            className={isUnfinished ? 'bg-amber-50/10' : ''}
-                                            style={{
-                                                transition: 'background-color 150ms ease',
-                                                animation: 'fadeSlideIn 220ms ease both',
-                                                animationDelay: `${Math.min(rowIdx * 20, 250)}ms`,
-                                            }}
+                                            id={`order-row-${group.orderId}`}
+                                            className={`order-row-anim ${isUnfinished ? 'bg-amber-50/10' : ''}`}
+                                            style={{ transition: 'background-color 150ms ease' }}
                                             onMouseEnter={e => e.currentTarget.style.backgroundColor = '#fafaf9'}
                                             onMouseLeave={e => e.currentTarget.style.backgroundColor = isUnfinished ? 'rgba(251,191,36,0.04)' : ''}
                                         >
                                             {/* Expand toggle */}
                                             <td className="px-5 py-4">
-                                                {group.items.length > 1 ? (
-                                                    <button
-                                                        onClick={() => toggleExpand(group.orderId)}
-                                                        className="p-1 rounded bg-stone-100 text-zinc-400 hover:text-zinc-800 hover:bg-stone-200"
-                                                        style={{ transition: 'background-color 150ms ease, color 150ms ease' }}
-                                                    >
-                                                        <span style={{
-                                                            display: 'block',
-                                                            transition: 'transform 220ms ease',
-                                                            transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
-                                                        }}>
-                                                            <ChevronDown size={16} />
-                                                        </span>
-                                                    </button>
-                                                ) : <span className="w-6 inline-block" />}
+                                                <button
+                                                    onClick={() => toggleExpand(group.orderId)}
+                                                    className="p-1 rounded bg-stone-100 text-zinc-400 hover:text-zinc-800 hover:bg-stone-200"
+                                                    style={{ transition: 'background-color 150ms ease, color 150ms ease' }}
+                                                >
+                                                    <span style={{
+                                                        display: 'block',
+                                                        transition: 'transform 220ms ease',
+                                                        transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                                                    }}>
+                                                        <ChevronDown size={16} />
+                                                    </span>
+                                                </button>
                                             </td>
 
-                                            <td className="px-5 py-4 font-mono text-xs font-bold text-zinc-500">
-                                                #{group.displayId}
+                                            {/* Clickable Order ID — toggles payment log rows */}
+                                            <td
+                                                className="px-5 py-4"
+                                                style={{ cursor: group.paymentLogs.length > 0 ? 'pointer' : 'default' }}
+                                                onClick={() => group.paymentLogs.length > 0 && togglePayLogs(group.orderId)}
+                                                title={group.paymentLogs.length > 0 ? 'Click to show/hide payment logs' : undefined}
+                                            >
+                                                <span className="font-mono text-xs font-bold text-zinc-500">
+                                                    #{group.displayId}
+                                                </span>
+                                                {group.paymentLogs.length > 0 && (
+                                                    <span
+                                                        className="ml-1.5 inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full align-middle"
+                                                        style={{
+                                                            backgroundColor: payLogsExpanded.has(group.orderId) ? '#dcfce7' : '#f1f5f9',
+                                                            color: payLogsExpanded.has(group.orderId) ? '#15803d' : '#64748b',
+                                                            border: `1px solid ${payLogsExpanded.has(group.orderId) ? '#86efac' : '#e2e8f0'}`,
+                                                            transition: 'background-color 150ms ease, color 150ms ease',
+                                                        }}
+                                                    >
+                                                        <CreditCard size={9} />
+                                                        {group.paymentLogs.length}
+                                                    </span>
+                                                )}
                                             </td>
                                             <td className="px-5 py-4 font-medium text-zinc-800">
                                                 <div className="flex items-center gap-2">
@@ -1133,8 +1384,8 @@ const OrderHistory = () => {
                                             </td>
                                         </tr>
 
-                                        {/* Expanded sub-rows */}
-                                        {group.items.length > 1 && isExpanded && (
+                                        {/* Expanded sub-rows and Payment Logs */}
+                                        {isExpanded && (
                                             <tr>
                                                 <td colSpan="10" className="p-0">
                                                     <div
@@ -1149,48 +1400,142 @@ const OrderHistory = () => {
                                                                     {group.items.map((item, idx) => {
                                                                         const isItemUnfinished = item.status === 'PARTIAL' || item.status === 'UNPAID';
                                                                         return (
-                                                                        <tr
-                                                                            key={idx}
-                                                                            className="border-b border-stone-200/50 last:border-0"
-                                                                            style={{ transition: 'background-color 150ms ease' }}
-                                                                            onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f5f5f4'}
-                                                                            onMouseLeave={e => e.currentTarget.style.backgroundColor = ''}
-                                                                        >
-                                                                            <td className="py-2 text-zinc-500 font-mono w-24">{item.variant?.sku}</td>
-                                                                            <td className="py-2 font-bold text-zinc-800">
-                                                                                {item.variant?.product
-                                                                                    ? `${item.variant.product.brandName} ${item.variant.product.modelName} ${item.variant?.color ? `(${item.variant.color})` : ''}`
-                                                                                    : '—'}
-                                                                            </td>
-                                                                            <td className="py-2 font-mono text-xs text-center w-20">
-                                                                                {item.status === 'FULL' ? (
-                                                                                    <span className="text-green-600 font-bold bg-green-50 px-1.5 py-0.5 rounded">PAID</span>
-                                                                                ) : (
-                                                                                    <span className="text-amber-600 font-bold bg-amber-50 px-1.5 py-0.5 rounded">{item.status}</span>
-                                                                                )}
-                                                                            </td>
-                                                                            <td className="py-2 text-right font-mono text-zinc-600 w-24">{formatCurrency(item.finalPrice)}</td>
-                                                                            <td className="py-2 text-right w-20 pl-4">
-                                                                                {isItemUnfinished && (
-                                                                                    <button
-                                                                                        onClick={() => handleCompleteItem(item)}
-                                                                                        disabled={completing === item.id}
-                                                                                        className="w-full px-2 py-1 bg-green-600 hover:bg-green-700 disabled:bg-stone-300 text-white text-[10px] uppercase tracking-wider font-bold rounded shadow-sm transition-colors flex justify-center items-center gap-1"
-                                                                                    >
-                                                                                        {completing === item.id ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={11} />}
-                                                                                        Pay
-                                                                                    </button>
-                                                                                )}
-                                                                            </td>
-                                                                        </tr>
-                                                                    )})}
+                                                                            <tr
+                                                                                key={idx}
+                                                                                className="border-b border-stone-200/50 last:border-0"
+                                                                                style={{ transition: 'background-color 150ms ease' }}
+                                                                                onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f5f5f4'}
+                                                                                onMouseLeave={e => e.currentTarget.style.backgroundColor = ''}
+                                                                            >
+                                                                                <td className="py-2 text-zinc-500 font-mono w-24">{item.variant?.sku}</td>
+                                                                                <td className="py-2 font-bold text-zinc-800">
+                                                                                    {item.variant?.product
+                                                                                        ? `${item.variant.product.brandName} ${item.variant.product.modelName} ${item.variant?.color ? `(${item.variant.color})` : ''}`
+                                                                                        : '—'}
+                                                                                </td>
+                                                                                <td className="py-2 font-mono text-xs text-center w-20">
+                                                                                    {item.status === 'FULL' ? (
+                                                                                        <span className="text-green-600 font-bold bg-green-50 px-1.5 py-0.5 rounded">PAID</span>
+                                                                                    ) : (
+                                                                                        <span className="text-amber-600 font-bold bg-amber-50 px-1.5 py-0.5 rounded">{item.status}</span>
+                                                                                    )}
+                                                                                </td>
+                                                                                <td className="py-2 text-right font-mono text-zinc-600 w-24">{formatCurrency(item.finalPrice)}</td>
+                                                                                <td className="py-2 text-right w-20 pl-4">
+                                                                                    {isItemUnfinished && (
+                                                                                        <button
+                                                                                            onClick={() => handleCompleteItem(item)}
+                                                                                            disabled={completing === item.id}
+                                                                                            className="w-full px-2 py-1 bg-green-600 hover:bg-green-700 disabled:bg-stone-300 text-white text-[10px] uppercase tracking-wider font-bold rounded shadow-sm transition-colors flex justify-center items-center gap-1"
+                                                                                        >
+                                                                                            {completing === item.id ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={11} />}
+                                                                                            Pay
+                                                                                        </button>
+                                                                                    )}
+                                                                                </td>
+                                                                            </tr>
+                                                                        )
+                                                                    })}
                                                                 </tbody>
                                                             </table>
                                                         </div>
+
+                                                        {/* Payment Logs */}
+                                                        {group.paymentLogs && group.paymentLogs.length > 0 && (
+                                                            <div className="py-3 px-8 ml-8 border-l-2 border-green-400 my-2">
+                                                                <h4 className="text-[10px] font-bold text-zinc-400 mb-2 uppercase tracking-wider flex items-center gap-1.5">
+                                                                    <CreditCard size={12} /> Payment Track
+                                                                </h4>
+                                                                <table className="w-full text-xs">
+                                                                    <tbody>
+                                                                        {group.paymentLogs.map((log, idx) => (
+                                                                            <tr
+                                                                                key={`log-${idx}`}
+                                                                                className="border-b border-stone-200/50 last:border-0"
+                                                                                style={{ transition: 'background-color 150ms ease' }}
+                                                                                onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f0fdf4'}
+                                                                                onMouseLeave={e => e.currentTarget.style.backgroundColor = ''}
+                                                                            >
+                                                                                <td className="py-1.5 text-zinc-500 w-48">{formatDate(log.paymentDate)}</td>
+                                                                                <td className="py-1.5 font-bold text-zinc-700">
+                                                                                    {log.paymentMethod || 'Unknown'}
+                                                                                </td>
+                                                                                <td className="py-1.5 text-right font-mono text-green-700 font-bold">
+                                                                                    {formatCurrency(log.amount)}
+                                                                                </td>
+                                                                            </tr>
+                                                                        ))}
+                                                                    </tbody>
+                                                                </table>
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 </td>
                                             </tr>
                                         )}
+
+                                        {/* ── Inline PAYMENT rows (no sort/filter overhead) ── */}
+                                        {payLogsExpanded.has(group.orderId) && group.paymentLogs.map(log => {
+                                            const orderDate = new Date(group.date);
+                                            const payDate = new Date(log.paymentDate);
+                                            const isLatePayment = (payDate.getTime() - orderDate.getTime()) > 30_000;
+                                            const orderDateLabel = orderDate.toLocaleDateString('en-PH', {
+                                                month: 'short', day: 'numeric', year: 'numeric'
+                                            });
+                                            return (
+                                                <tr
+                                                    key={`pay-${log.id}`}
+                                                    className="bg-green-50/20"
+                                                    style={{ transition: 'background-color 150ms ease', animation: 'fadeSlideIn 180ms ease both' }}
+                                                    onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f0fdf4'}
+                                                    onMouseLeave={e => e.currentTarget.style.backgroundColor = 'rgba(240,253,244,0.3)'}
+                                                >
+                                                    <td className="px-5 py-4" />
+                                                    <td className="px-5 py-4 font-mono text-xs font-bold text-zinc-500">
+                                                        PAY-#{group.displayId}
+                                                    </td>
+                                                    <td className="px-5 py-4 font-medium text-zinc-800">
+                                                        <div className="flex items-center gap-2">
+                                                            <span>{group.customerName}</span>
+                                                            {group.transactionType === 'CONSIGNMENT' && (
+                                                                <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-purple-100 text-purple-700">CONSIGNMENT</span>
+                                                            )}
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-5 py-4">
+                                                        <div className="flex flex-col gap-1">
+                                                            <span className="text-green-700 font-bold">Payment towards Order</span>
+                                                            {isLatePayment && (
+                                                                <span
+                                                                    className="inline-flex items-center gap-1 self-start px-2 py-0.5 rounded text-[10px] font-bold tracking-wide"
+                                                                    title={`Original order placed on ${orderDateLabel}`}
+                                                                    style={{ backgroundColor: '#fef3c7', color: '#92400e', border: '1px solid #fde68a' }}
+                                                                >
+                                                                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                                                                    Order from {orderDateLabel}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-5 py-4">
+                                                        <span className="inline-flex items-center gap-1 font-bold text-zinc-600 bg-stone-100 px-2 py-1 rounded">
+                                                            <CreditCard size={14} /> {log.paymentMethod || 'Unknown'}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-5 py-4">
+                                                        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] uppercase tracking-wider font-bold bg-green-100 text-green-700">Payment Recv</span>
+                                                    </td>
+                                                    <td className="px-5 py-4 text-right font-mono text-zinc-600">—</td>
+                                                    <td className="px-5 py-4 text-right font-mono">
+                                                        <span className="font-black text-sm text-green-600">+{formatCurrency(log.amount)}</span>
+                                                    </td>
+                                                    <td className="px-5 py-4 text-xs text-zinc-500 font-medium">
+                                                        {formatDate(log.paymentDate)}
+                                                    </td>
+                                                    <td className="px-5 py-4" />
+                                                </tr>
+                                            );
+                                        })}
                                     </React.Fragment>
                                 );
                             })
@@ -1217,12 +1562,13 @@ const OrderHistory = () => {
 
             {/* Edit Payment Modal */}
             {editingPayment && (() => {
-                const group = groupedOrders.find(g => g.orderId === editingPayment);
+                const orderItem = timelineItems.find(i => i.type === 'ORDER' && i.data.orderId === editingPayment);
+                const group = orderItem ? orderItem.data : null;
                 return group ? (
                     <EditPaymentModal
                         group={group}
                         methods={paymentMethods}
-                        onSave={(newMethod) => handleUpdatePayment(group, newMethod)}
+                        onSave={(newMethod, updateLogs) => handleUpdatePayment(group, newMethod, updateLogs)}
                         onClose={() => setEditingPayment(null)}
                     />
                 ) : null;

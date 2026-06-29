@@ -54,6 +54,52 @@ public class SchemaFix implements CommandLineRunner {
                     "FOREIGN KEY (stock_batch_id) REFERENCES stock_batches(id) ON DELETE SET NULL",
                 "FK constraint fk_tx_stock_batch with ON DELETE SET NULL added.");
 
+        // ── Data migrations ────────────────────────────────────────────────────
+        // Rename old 'Bank Transfer' payment method to 'Banko'
+        safeExecute("UPDATE transactions SET payment_method = 'Banko' WHERE payment_method = 'Bank Transfer'",
+                "Renamed 'Bank Transfer' payment method to 'Banko' in existing transactions.");
+
+        // ── Payment Logs table ────────────────────────────────────────────────
+        safeExecute("CREATE TABLE IF NOT EXISTS payment_logs (" +
+                "id BIGSERIAL PRIMARY KEY, " +
+                "transaction_id BIGINT REFERENCES transactions(id) ON DELETE CASCADE, " +
+                "order_id VARCHAR(255), " +
+                "amount DECIMAL(19,2), " +
+                "cost_portion DECIMAL(19,2), " +
+                "payment_date TIMESTAMP, " +
+                "payment_method VARCHAR(255))",
+                "Created payment_logs table.");
+
+        // Backfill: create payment log entries for existing FULL transactions
+        // Only run if the table is empty (avoid duplicates on repeated startups)
+        try {
+            Integer count = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM payment_logs", Integer.class);
+            if (count != null && count == 0) {
+                // Backfill FULL transactions: payment amount = finalPrice, date = transactionDate
+                int fullRows = jdbcTemplate.update(
+                    "INSERT INTO payment_logs (transaction_id, order_id, amount, cost_portion, payment_date, payment_method) " +
+                    "SELECT t.id, COALESCE(t.transaction_id, 'LEGACY-' || t.id), t.final_price, COALESCE(t.cost_price, 0), " +
+                    "t.transaction_date, COALESCE(t.payment_method, 'Unknown') " +
+                    "FROM transactions t WHERE t.status = 'FULL' AND t.final_price IS NOT NULL AND t.final_price > 0"
+                );
+                log.info("Backfilled " + fullRows + " payment logs for FULL transactions.");
+
+                // Backfill PARTIAL transactions: payment amount = downpayment, date = transactionDate
+                int partialRows = jdbcTemplate.update(
+                    "INSERT INTO payment_logs (transaction_id, order_id, amount, cost_portion, payment_date, payment_method) " +
+                    "SELECT t.id, COALESCE(t.transaction_id, 'LEGACY-' || t.id), t.downpayment, " +
+                    "CASE WHEN t.final_price > 0 THEN COALESCE(t.cost_price, 0) * t.downpayment / t.final_price ELSE 0 END, " +
+                    "t.transaction_date, COALESCE(t.payment_method, 'Unknown') " +
+                    "FROM transactions t WHERE t.status = 'PARTIAL' AND t.downpayment IS NOT NULL AND t.downpayment > 0"
+                );
+                log.info("Backfilled " + partialRows + " payment logs for PARTIAL transactions.");
+            } else {
+                log.info("Payment logs table already has data, skipping backfill.");
+            }
+        } catch (Exception e) {
+            log.info("Payment logs backfill skipped: " + e.getMessage());
+        }
+
         log.info("Schema check complete.");
     }
 

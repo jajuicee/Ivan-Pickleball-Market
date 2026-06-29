@@ -16,7 +16,7 @@ const Inventory = ({ products = [], loading = false }) => {
     // --- TABLE FILTER ---
     const [tableFilter, setTableFilter] = useState('');
     const [sortOrder, setSortOrder] = useState('name-asc');
-    const [categoryFilter, setCategoryFilter] = useState('All'); // All, Paddles, Accessories
+    const [categoryFilter, setCategoryFilter] = useState('All'); // All, Paddles, Accessories, Shoes
     const [stockFilter, setStockFilter] = useState('all'); // all | low | out
 
     // --- FLATTEN DATA ---
@@ -24,6 +24,7 @@ const Inventory = ({ products = [], loading = false }) => {
         return products.flatMap(product =>
             (product.variants || []).map(variant => {
                 const isPaddle = product.category === 'Paddles';
+                const isShoe = product.category === 'Shoes';
                 const qty = variant.stockQuantity ?? 0;
                 const threshold = variant.lowStockThreshold ?? DEFAULT_LOW_STOCK_THRESHOLD;
                 return {
@@ -32,7 +33,11 @@ const Inventory = ({ products = [], loading = false }) => {
                     brand: product.brandName,
                     name: product.modelName,
                     color: (variant.color === 'N/A' || !variant.color) ? '-' : variant.color,
-                    variantDetails: isPaddle ? `${variant.thicknessMm || 0}mm ${variant.shape || ''}` : '-',
+                    variantDetails: isPaddle
+                        ? `${variant.thicknessMm || 0}mm ${variant.shape || ''}`
+                        : isShoe
+                            ? `Size ${variant.shape || '-'}`
+                            : '-',
                     quantity: qty,
                     sellingPrice: variant.sellingPrice ?? 0,
                     acquisitionPrice: variant.acquisitionPrice ?? 0,
@@ -46,7 +51,9 @@ const Inventory = ({ products = [], loading = false }) => {
                     isOutOfStock: qty <= 0,
                     dropdownName: isPaddle
                         ? `${product.brandName} ${product.modelName} ${variant.color || ''} ${variant.thicknessMm || 0}mm`
-                        : `${product.brandName} ${product.modelName}`
+                        : isShoe
+                            ? `${product.brandName} ${product.modelName} ${variant.shape || ''}`
+                            : `${product.brandName} ${product.modelName}`
                 };
             })
         );
@@ -93,13 +100,13 @@ const Inventory = ({ products = [], loading = false }) => {
         list.sort((a, b) => {
             if (sortOrder === 'stock-asc') return a.quantity - b.quantity;
             if (sortOrder === 'stock-desc') return b.quantity - a.quantity;
-            if (sortOrder === 'name-asc') return a.dropdownName.localeCompare(b.dropdownName);
-            if (sortOrder === 'name-desc') return b.dropdownName.localeCompare(a.dropdownName);
+            if (sortOrder === 'name-asc') return a.dropdownName.localeCompare(b.dropdownName, undefined, { numeric: true });
+            if (sortOrder === 'name-desc') return b.dropdownName.localeCompare(a.dropdownName, undefined, { numeric: true });
             return 0;
         });
 
         return list;
-    }, [tableFilter, stockFilter, sortOrder, flattenedInventory]);
+    }, [tableFilter, stockFilter, sortOrder, categoryFilter, flattenedInventory]);
 
     const searchSummary = useMemo(() => {
         if (!tableFilter.trim()) return null;
@@ -141,7 +148,7 @@ const Inventory = ({ products = [], loading = false }) => {
 
                 <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto mt-2 sm:mt-0 justify-end">
                     <div className="flex bg-stone-200/50 p-1.5 rounded-xl border border-stone-200 mr-auto sm:mr-0 h-[38px] items-center">
-                        {['All', 'Paddles', 'Accessories'].map(cat => (
+                        {['All', 'Paddles', 'Accessories', 'Shoes'].map(cat => (
                             <button
                                 key={cat}
                                 onClick={() => { setCategoryFilter(cat); setDisplayedCount(15); }}

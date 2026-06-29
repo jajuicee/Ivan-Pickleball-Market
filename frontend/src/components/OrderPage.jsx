@@ -9,7 +9,8 @@ import {
 const EMPTY_FORM = {
     customerName: '',
     paymentMethod: 'GCash',
-    orderNote: ''
+    orderNote: '',
+    splits: [{ method: 'GCash', amount: '' }, { method: 'Cash', amount: '' }]
 };
 
 const fmt = (val) =>
@@ -71,10 +72,13 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
 
     // ── Product search ────────────────────────────────────────────────────────
     const inventoryList = useMemo(() =>
-        products.flatMap(p => p.variants.map(v => ({
-            ...v,
-            displayName: `${p.brandName} ${p.modelName}${v.color && v.color !== 'N/A' ? ` (${v.color})` : ''}`
-        }))),
+        products.flatMap(p => p.variants.map(v => {
+            const isShoe = p.category === 'Shoes';
+            return {
+                ...v,
+                displayName: `${p.brandName} ${p.modelName}${v.color && v.color !== 'N/A' ? ` (${v.color})` : ''}${isShoe && v.shape ? ` Size ${v.shape}` : ''}`
+            };
+        })).sort((a, b) => a.displayName.localeCompare(b.displayName, undefined, { numeric: true })),
     [products]);
 
     const filteredResults = useMemo(() => {
@@ -110,7 +114,11 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
 
     // ── Totals ────────────────────────────────────────────────────────────────
     const cartTotal = cart.reduce((sum, item) => sum + ((parseFloat(item.finalPrice) || 0) * (parseInt(item.qty) || 0)), 0);
-    const amountPaid = cart.reduce((sum, item) => sum + (item.paymentStatus === 'PAID' ? ((parseFloat(item.finalPrice) || 0) * (parseInt(item.qty) || 0)) : 0), 0);
+    const amountPaid = cart.reduce((sum, item) => {
+        if (item.paymentStatus === 'PAID') return sum + ((parseFloat(item.finalPrice) || 0) * (parseInt(item.qty) || 0));
+        if (item.paymentStatus === 'PARTIAL') return sum + ((parseFloat(item.downpayment) || 0) * (parseInt(item.qty) || 0));
+        return sum;
+    }, 0);
     const amountUnpaid = cartTotal - amountPaid;
 
     // ── Reset ─────────────────────────────────────────────────────────────────
@@ -146,11 +154,37 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
         const generatedTransactionId = ticketNumber;
 
         const payloads = [];
+
+        // Track remaining splits to distribute them across items
+        let remainingSplits = [];
+        if (formData.paymentMethod === 'Split Payment' && formData.splits && formData.splits.length > 0) {
+            remainingSplits = JSON.parse(JSON.stringify(formData.splits));
+        }
+
         cart.forEach(item => {
             const qty = parseInt(item.qty) || 1;
             const pricePerItem = parseFloat(item.finalPrice) || 0;
             // Expand quantity into individual transactions since 1 transaction = 1 item in DB
             for(let i = 0; i < qty; i++) {
+                let amountToPayForItem = 0;
+                if (item.paymentStatus === 'PAID') amountToPayForItem = pricePerItem;
+                else if (item.paymentStatus === 'PARTIAL') amountToPayForItem = parseFloat(item.downpayment || 0);
+
+                let itemSplits = [];
+                if (formData.paymentMethod === 'Split Payment' && amountToPayForItem > 0) {
+                    let itemRemaining = amountToPayForItem;
+                    for (let split of remainingSplits) {
+                        if (itemRemaining <= 0) break;
+                        const splitAmt = parseFloat(split.amount) || 0;
+                        if (splitAmt <= 0) continue;
+                        
+                        let take = Math.min(itemRemaining, splitAmt);
+                        itemSplits.push({ method: split.method, amount: take });
+                        split.amount = splitAmt - take;
+                        itemRemaining -= take;
+                    }
+                }
+
                 payloads.push({
                     transactionId: generatedTransactionId,
                     variant: { id: item.variant.id },
@@ -159,11 +193,12 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
                         : formData.customerName,
                     paymentMethod: formData.paymentMethod,
                     paymentDetails: formData.orderNote,
-                    status: item.paymentStatus === 'PAID' ? 'FULL' : 'UNPAID',
-                    downpayment: 0,
+                    status: item.paymentStatus === 'PAID' ? 'FULL' : (item.paymentStatus === 'PARTIAL' ? 'PARTIAL' : 'UNPAID'),
+                    downpayment: amountToPayForItem,
                     finalPrice: pricePerItem,
                     transactionType: orderMode,
-                    consignee: orderMode === 'CONSIGNMENT' && selectedConsigneeId ? { id: parseInt(selectedConsigneeId) } : null
+                    consignee: orderMode === 'CONSIGNMENT' && selectedConsigneeId ? { id: parseInt(selectedConsigneeId) } : null,
+                    splits: itemSplits.length > 0 ? itemSplits : null
                 });
             }
         });
@@ -318,7 +353,7 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
                                                 <span className="block text-xs font-mono text-zinc-400 mt-0.5">SKU: {item.sku}</span>
                                             </div>
                                             <span className="text-xs font-bold px-2 py-1 rounded bg-green-100 text-green-700">
-                                                {item.stockQuantity} in stock
+                                                Available
                                             </span>
                                         </div>
                                     </div>
@@ -348,7 +383,7 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
                                     <div className="flex-1 min-w-0">
                                         <p className="font-bold text-zinc-900 truncate">{item.variant.displayName}</p>
                                         <p className="text-xs font-mono text-zinc-500">
-                                            SKU: {item.variant.sku} <span className="text-amber-600 font-bold ml-2">Stock: {item.variant.stockQuantity}</span>
+                                            SKU: {item.variant.sku} <span className="text-amber-600 font-bold ml-2">Available</span>
                                         </p>
                                     </div>
                                     
@@ -369,11 +404,21 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
                                         <div className="flex-1 sm:w-28">
                                             <label className="block text-[10px] uppercase font-bold text-zinc-500 mb-1">Status</label>
                                             <select value={item.paymentStatus} onChange={e => updateCartItem(item.variant.id, 'paymentStatus', e.target.value)}
-                                                className={`w-full px-2 py-1.5 text-sm border rounded outline-none font-bold ${item.paymentStatus === 'PAID' ? 'bg-green-50 text-green-700 border-green-200 focus:ring-green-500' : 'bg-amber-50 text-amber-700 border-amber-200 focus:ring-amber-500'}`}>
+                                                className={`w-full px-2 py-1.5 text-sm border rounded outline-none font-bold ${item.paymentStatus === 'PAID' ? 'bg-green-50 text-green-700 border-green-200 focus:ring-green-500' : (item.paymentStatus === 'PARTIAL' ? 'bg-blue-50 text-blue-700 border-blue-200 focus:ring-blue-500' : 'bg-amber-50 text-amber-700 border-amber-200 focus:ring-amber-500')}`}>
                                                 <option value="PAID">PAID</option>
+                                                <option value="PARTIAL">PARTIAL</option>
                                                 <option value="UNPAID">UNPAID</option>
                                             </select>
                                         </div>
+                                        {item.paymentStatus === 'PARTIAL' && (
+                                            <div className="flex-1 sm:w-24 mt-2 sm:mt-0">
+                                                <label className="block text-[10px] uppercase font-bold text-zinc-500 mb-1">Paid / Item</label>
+                                                <input type="number" min="0" max={item.finalPrice} required value={item.downpayment || ''}
+                                                    onChange={e => updateCartItem(item.variant.id, 'downpayment', e.target.value)}
+                                                    placeholder="0"
+                                                    className="w-full px-2 py-1.5 text-sm border rounded focus:ring-2 focus:ring-zinc-950 font-bold" />
+                                            </div>
+                                        )}
                                         <button type="button" onClick={() => removeCartItem(item.variant.id)}
                                             className="text-zinc-400 hover:text-red-500 p-2 mt-4 transition-colors">
                                             <Trash2 size={18} />
@@ -459,13 +504,69 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
                             </label>
                             <select value={formData.paymentMethod}
                                 onChange={e => setFormData({ ...formData, paymentMethod: e.target.value })}
-                                className="w-full px-4 py-2 border rounded-lg bg-white outline-none focus:ring-2 focus:ring-zinc-950">
+                                className="w-full px-4 py-2 border rounded-lg bg-white outline-none focus:ring-2 focus:ring-zinc-950 mb-3">
                                 <option value="GCash">GCash</option>
-                                <option value="Bank Transfer">Bank Transfer</option>
+                                <option value="Banko">Banko</option>
+                                <option value="BDO">BDO</option>
                                 <option value="GoTyme">GoTyme</option>
                                 <option value="Cash">Cash</option>
+                                <option value="Credit Card">Credit Card</option>
+                                <option value="Maya">Maya</option>
                                 <option value="Split Payment">Split Payment</option>
                             </select>
+
+                            {formData.paymentMethod === 'Split Payment' && (
+                                <div className="p-4 bg-stone-100 rounded-xl border border-stone-200 space-y-3">
+                                    <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider">Define Splits</label>
+                                    {(formData.splits || []).map((split, idx) => (
+                                        <div key={idx} className="flex gap-2">
+                                            <select 
+                                                value={split.method}
+                                                onChange={e => {
+                                                    const newSplits = [...formData.splits];
+                                                    newSplits[idx].method = e.target.value;
+                                                    setFormData({ ...formData, splits: newSplits });
+                                                }}
+                                                className="flex-1 px-3 py-2 text-sm border rounded bg-white outline-none focus:ring-2 focus:ring-zinc-950">
+                                                <option value="GCash">GCash</option>
+                                                <option value="Banko">Banko</option>
+                                                <option value="BDO">BDO</option>
+                                                <option value="GoTyme">GoTyme</option>
+                                                <option value="Cash">Cash</option>
+                                                <option value="Credit Card">Credit Card</option>
+                                                <option value="Maya">Maya</option>
+                                            </select>
+                                            <input 
+                                                type="number" min="0" step="0.01"
+                                                value={split.amount}
+                                                placeholder="Amount"
+                                                onChange={e => {
+                                                    const newSplits = [...formData.splits];
+                                                    newSplits[idx].amount = e.target.value;
+                                                    setFormData({ ...formData, splits: newSplits });
+                                                }}
+                                                className="w-24 px-3 py-2 text-sm border rounded outline-none focus:ring-2 focus:ring-zinc-950 font-bold"
+                                            />
+                                            <button type="button" onClick={() => {
+                                                const newSplits = formData.splits.filter((_, i) => i !== idx);
+                                                setFormData({ ...formData, splits: newSplits });
+                                            }} className="p-2 text-zinc-400 hover:text-red-500">
+                                                <X size={16}/>
+                                            </button>
+                                        </div>
+                                    ))}
+                                    <button type="button" onClick={() => setFormData({ ...formData, splits: [...(formData.splits || []), { method: 'GCash', amount: '' }] })}
+                                        className="text-xs font-bold text-blue-600 hover:underline">
+                                        + Add Another Split
+                                    </button>
+                                    <div className="pt-2 border-t border-stone-200 flex justify-between text-xs font-bold">
+                                        <span className="text-zinc-500">Total Splits</span>
+                                        <span className={((formData.splits || []).reduce((s, x) => s + (parseFloat(x.amount)||0), 0) !== amountPaid) ? 'text-red-600' : 'text-green-600'}>
+                                            {fmt((formData.splits || []).reduce((s, x) => s + (parseFloat(x.amount)||0), 0))} / {fmt(amountPaid)}
+                                        </span>
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
                         <div>
@@ -493,7 +594,8 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
 
                             <button type="submit" disabled={
                                 cart.length === 0 || 
-                                (orderMode === 'REGULAR' ? !formData.customerName : !selectedConsigneeId)
+                                (orderMode === 'REGULAR' ? !formData.customerName : !selectedConsigneeId) ||
+                                (formData.paymentMethod === 'Split Payment' && (formData.splits || []).reduce((s, x) => s + (parseFloat(x.amount)||0), 0) !== amountPaid)
                             }
                                 className="w-full bg-zinc-950 text-white px-8 py-4 mt-4 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-zinc-800 disabled:bg-stone-300 disabled:cursor-not-allowed transition-all text-lg shadow-md">
                                 <ClipboardList size={20} /> Review Order
@@ -553,6 +655,7 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
                                         <div className="flex-[2] truncate pr-2 font-medium text-zinc-800 flex items-center gap-2">
                                             {item.qty}x {item.variant.displayName}
                                             {item.paymentStatus === 'UNPAID' && <span className="bg-amber-100 text-amber-800 text-[10px] uppercase font-bold px-1.5 py-0.5 rounded">UNPAID</span>}
+                                            {item.paymentStatus === 'PARTIAL' && <span className="bg-blue-100 text-blue-800 text-[10px] uppercase font-bold px-1.5 py-0.5 rounded">PARTIAL (Paid {fmt(item.downpayment || 0)} / ea)</span>}
                                         </div>
                                         <div className="font-mono text-zinc-500 text-xs mt-0.5 w-24 truncate">{item.variant.sku}</div>
                                         <div className="font-bold text-zinc-900 text-right w-24">{fmt(item.finalPrice * item.qty)}</div>
@@ -680,6 +783,9 @@ const PosTicket = ({ cart, cartTotal, amountPaid, amountUnpaid, ticketNumber, cu
                                             <span className="font-bold">{qty} × {item.variant.displayName}</span>
                                             {item.paymentStatus === 'UNPAID' && (
                                                 <span className="text-amber-700 font-bold text-[10px] block mt-0.5">[UNPAID]</span>
+                                            )}
+                                            {item.paymentStatus === 'PARTIAL' && (
+                                                <span className="text-blue-700 font-bold text-[10px] block mt-0.5">[PARTIAL: Paid {fmt(item.downpayment || 0)} / ea]</span>
                                             )}
                                         </div>
                                         <span className="font-bold whitespace-nowrap">₱{lineTotal.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>

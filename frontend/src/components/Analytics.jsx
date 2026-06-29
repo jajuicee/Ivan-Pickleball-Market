@@ -115,14 +115,18 @@ const CalendarPicker = ({ onApply, onClose }) => {
 };
 
 // ── Payment Method Dropdown ──────────────────────────────────────────────────
-const PaymentFilter = ({ transactions, value, onChange }) => {
+const PaymentFilter = ({ transactions, paymentLogs, value, onChange }) => {
     const [open, setOpen] = useState(false);
     const ref = useRef(null);
 
-    const methods = useMemo(() => {
+    const paymentMethods = useMemo(() => {
         const set = new Set(transactions.map(t => t.paymentMethod).filter(Boolean));
-        return ['All', ...Array.from(set).sort()];
-    }, [transactions]);
+        paymentLogs.forEach(pl => {
+            if (pl.paymentMethod) set.add(pl.paymentMethod);
+        });
+        set.add('Credit Card');
+        return Array.from(set).sort();
+    }, [transactions, paymentLogs]);
 
     useEffect(() => {
         const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
@@ -163,7 +167,7 @@ const PaymentFilter = ({ transactions, value, onChange }) => {
                     pointerEvents: open ? 'all' : 'none',
                 }}
             >
-                {methods.map(method => (
+                {paymentMethods.map(method => (
                     <button
                         key={method}
                         onClick={() => { onChange(method); setOpen(false); }}
@@ -217,19 +221,55 @@ const Analytics = () => {
 
     const handlePresetSelect = (range) => { setTimeRange(range); setCustomRange(null); };
 
-    const fetchTransactions = () => {
+    const [paymentLogs, setPaymentLogs] = useState([]);
+
+    // Helper: format date as LocalDateTime string for the API
+    const fmtDt = (d) => {
+        const p = (n) => n.toString().padStart(2, '0');
+        return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+    };
+
+    const getDateBounds = () => {
+        const now = new Date();
+        if (customRange) {
+            const end = new Date(customRange.end); end.setHours(23, 59, 59);
+            return { from: fmtDt(customRange.start), to: fmtDt(end) };
+        }
+        if (!timeRange) return null;
+        if (timeRange.id === '1D') {
+            return { from: fmtDt(getStartOfDay(now)), to: fmtDt(now) };
+        }
+        const from = new Date(now); from.setDate(now.getDate() - timeRange.days);
+        return { from: fmtDt(from), to: fmtDt(now) };
+    };
+
+    const fetchData = () => {
         setLoading(true);
         setError('');
-        axios.get(`http://${window.location.hostname}:8080/api/transactions`)
-            .then(res => setTransactions(Array.isArray(res.data) ? res.data : []))
+        const bounds = getDateBounds();
+        const txUrl = bounds
+            ? `http://${window.location.hostname}:8080/api/transactions?from=${bounds.from}&to=${bounds.to}&limit=10000`
+            : `http://${window.location.hostname}:8080/api/transactions?limit=10000`;
+        const plUrl = bounds
+            ? `http://${window.location.hostname}:8080/api/payment-logs?from=${bounds.from}&to=${bounds.to}`
+            : `http://${window.location.hostname}:8080/api/payment-logs`;
+        Promise.all([
+            axios.get(txUrl),
+            axios.get(plUrl)
+        ])
+            .then(([txRes, plRes]) => {
+                setTransactions(Array.isArray(txRes.data) ? txRes.data : []);
+                setPaymentLogs(Array.isArray(plRes.data) ? plRes.data : []);
+            })
             .catch(() => setError('Could not load analytics data.'))
             .finally(() => setLoading(false));
     };
 
-    useEffect(() => { fetchTransactions(); }, []);
+    useEffect(() => { fetchData(); }, [timeRange, customRange]);
+
 
     const processedData = useMemo(() => {
-        if (!transactions.length) return { chartData: [], topProducts: [], summary: {} };
+        if (!transactions.length && !paymentLogs.length) return { chartData: [], topProducts: [], summary: {} };
 
         const now = new Date();
         let cutoffDate, toDate;
@@ -257,6 +297,36 @@ const Analytics = () => {
             groupBy = diffDays > 60 ? 'month' : 'day';
         }
 
+        // ── Revenue & Profit: from PAYMENT LOGS (by actual payment date) ──────
+        const validLogs = paymentLogs.filter(pl => {
+            const pDate = new Date(pl.paymentDate);
+            const inDate = pDate >= cutoffDate && pDate <= toDate;
+            const inPayment = paymentFilter === 'All' || pl.paymentMethod === paymentFilter;
+            return inDate && inPayment;
+        }).map(pl => {
+            const revenue = Number(pl.amount || 0);
+            const cost = Number(pl.costPortion || 0);
+            return { ...pl, date: new Date(pl.paymentDate), revenue, cost, profit: revenue - cost };
+        });
+
+        // Group payment logs by date for the Revenue Trends chart
+        const grouped = validLogs.reduce((acc, pl) => {
+            let groupKey;
+            if (groupBy === 'month') groupKey = pl.date.toLocaleString('en-PH', { month: 'short', year: 'numeric' });
+            else if (groupBy === 'week') { const ws = getStartOfWeek(pl.date); groupKey = ws.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }); }
+            else if (groupBy === 'hour') groupKey = pl.date.toLocaleTimeString('en-PH', { hour: 'numeric', hour12: true });
+            else groupKey = pl.date.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' });
+
+            if (!acc[groupKey]) acc[groupKey] = { name: groupKey, xDate: pl.date.getTime(), revenue: 0, profit: 0, cost: 0 };
+            acc[groupKey].revenue += pl.revenue;
+            acc[groupKey].profit += pl.profit;
+            acc[groupKey].cost += pl.cost;
+            return acc;
+        }, {});
+
+        const chartData = Object.values(grouped).sort((a, b) => a.xDate - b.xDate);
+
+        // ── Units & Product Rankings: from TRANSACTIONS (by order date) ───────
         const validTxs = transactions.filter(t => {
             const tDate = new Date(t.transactionDate);
             const inDate = tDate >= cutoffDate && tDate <= toDate;
@@ -268,38 +338,19 @@ const Analytics = () => {
                     ? t.transactionType !== 'CONSIGNMENT' 
                     : t.transactionType === 'CONSIGNMENT';
             return inDate && inPayment && isPaid && inType;
-        }).map(t => {
-            const selling = t.status === 'PARTIAL' ? Number(t.downpayment || 0) : Number(t.finalPrice || 0);
-            const cost = Number(t.costPrice || t.variant?.acquisitionPrice || 0);
-            return { ...t, date: new Date(t.transactionDate), profit: selling - cost, revenue: selling, cost };
         });
-
-        const grouped = validTxs.reduce((acc, t) => {
-            let groupKey;
-            if (groupBy === 'month') groupKey = t.date.toLocaleString('en-PH', { month: 'short', year: 'numeric' });
-            else if (groupBy === 'week') { const ws = getStartOfWeek(t.date); groupKey = ws.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }); }
-            else if (groupBy === 'hour') groupKey = t.date.toLocaleTimeString('en-PH', { hour: 'numeric', hour12: true });
-            else groupKey = t.date.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' });
-
-            if (!acc[groupKey]) acc[groupKey] = { name: groupKey, xDate: t.date.getTime(), revenue: 0, profit: 0, cost: 0, units: 0 };
-            acc[groupKey].revenue += t.revenue;
-            acc[groupKey].profit += t.profit;
-            acc[groupKey].cost += t.cost;
-            acc[groupKey].units += 1;
-            return acc;
-        }, {});
-
-        const chartData = Object.values(grouped).sort((a, b) => a.xDate - b.xDate);
 
         const productMap = validTxs.reduce((acc, t) => {
             if (!t.variant?.product) return acc;
             const p = t.variant.product;
             const name = `${p.brandName} ${p.modelName} ${t.variant.color ? `(${t.variant.color})` : ''}`.trim();
             const key = t.variant.sku;
+            const selling = t.status === 'PARTIAL' ? Number(t.downpayment || 0) : Number(t.finalPrice || 0);
+            const cost = Number(t.costPrice || t.variant?.acquisitionPrice || 0);
             if (!acc[key]) acc[key] = { name, sku: t.variant.sku, category: p.category || 'Uncategorized', units: 0, revenue: 0, profit: 0 };
             acc[key].units += 1;
-            acc[key].revenue += t.revenue;
-            acc[key].profit += t.profit;
+            acc[key].revenue += selling;
+            acc[key].profit += selling - cost;
             return acc;
         }, {});
 
@@ -316,14 +367,15 @@ const Analytics = () => {
         // Derive unique categories from all products in range (unfiltered)
         const allCategories = ['All', ...Array.from(new Set(Object.values(productMap).map(p => p.category).filter(Boolean))).sort()];
 
-        const totalRevenue = validTxs.reduce((s, t) => s + t.revenue, 0);
-        const totalProfit = validTxs.reduce((s, t) => s + t.profit, 0);
-        const totalCost = validTxs.reduce((s, t) => s + t.cost, 0);
+        // Summary: revenue & profit from payment logs, units from transactions
+        const totalRevenue = validLogs.reduce((s, pl) => s + pl.revenue, 0);
+        const totalProfit = validLogs.reduce((s, pl) => s + pl.profit, 0);
+        const totalCost = validLogs.reduce((s, pl) => s + pl.cost, 0);
         const totalUnits = validTxs.length;
         const avgMargin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
 
         return { chartData, topProducts, allCategories, summary: { revenue: totalRevenue, profit: totalProfit, cost: totalCost, units: totalUnits, margin: avgMargin } };
-    }, [transactions, timeRange, topFilter, customRange, paymentFilter, typeFilter, categoryFilter]);
+    }, [transactions, paymentLogs, timeRange, topFilter, customRange, paymentFilter, typeFilter, categoryFilter]);
 
     const { chartData, topProducts, allCategories = ['All'], summary } = processedData;
     const paddleChartHeight = Math.max(400, topProducts.length * 40 + 50);
@@ -359,7 +411,7 @@ const Analytics = () => {
                     <div className="w-px h-5 bg-stone-200 mx-1" />
 
                     {/* Payment Method Filter */}
-                    <PaymentFilter transactions={transactions} value={paymentFilter} onChange={setPaymentFilter} />
+                    <PaymentFilter transactions={transactions} paymentLogs={paymentLogs} value={paymentFilter} onChange={setPaymentFilter} />
 
                     <div className="w-px h-5 bg-stone-200 mx-1" />
 
@@ -411,7 +463,7 @@ const Analytics = () => {
                         {showCalendar && <CalendarPicker onApply={handleCalendarApply} onClose={() => setShowCalendar(false)} />}
                     </div>
 
-                    <button onClick={fetchTransactions} disabled={loading}
+                    <button onClick={fetchData} disabled={loading}
                         className="p-2 ml-1 rounded-lg border border-stone-300 bg-white text-zinc-500 hover:bg-stone-50 disabled:opacity-40 shadow-sm transition-all">
                         <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
                     </button>

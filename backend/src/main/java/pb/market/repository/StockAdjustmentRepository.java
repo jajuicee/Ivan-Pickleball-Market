@@ -8,6 +8,12 @@ import pb.market.entity.StockAdjustment;
 import java.util.List;
 
 public interface StockAdjustmentRepository extends JpaRepository<StockAdjustment, Long> {
+    @Query("SELECT a.variant.id, a.quantity, a.adjustedAt FROM StockAdjustment a WHERE a.variant IS NOT NULL AND a.quantity IS NOT NULL")
+    List<Object[]> findAllVariantIdsQuantitiesAndDates();
+
+    @Query("SELECT a FROM StockAdjustment a JOIN FETCH a.variant v JOIN FETCH v.product")
+    List<StockAdjustment> findAllWithDetails();
+
     List<StockAdjustment> findByVariantIdOrderByAdjustedAtDesc(Long variantId);
 
     // Total units removed via manual adjustments per variant (damaged, returned to supplier, etc.)

@@ -16,9 +16,14 @@ const ProductSales = ({ products = [] }) => {
         const flattened = products.flatMap(product => 
             product.variants?.map(variant => {
                 const isPaddle = product.category === 'Paddles';
-                const name = isPaddle
-                    ? `${product.brandName} ${product.modelName} ${variant.color && variant.color !== 'N/A' ? `(${variant.color}) ` : ''}${variant.thicknessMm ? `${variant.thicknessMm}mm` : ''}`
-                    : `${product.brandName} ${product.modelName}`;
+                const isShoe = product.category === 'Shoes';
+                
+                // Build display name identical to OrderPage for consistency
+                const colorTag = variant.color && variant.color !== 'N/A' ? ` (${variant.color})` : '';
+                const sizeTag = isShoe && variant.shape ? ` Size ${variant.shape}` : '';
+                const thickTag = isPaddle && variant.thicknessMm ? ` ${variant.thicknessMm}mm` : '';
+                
+                const name = `${product.brandName} ${product.modelName}${colorTag}${thickTag}${sizeTag}`;
 
                 const totalAdded = variant.totalAdded || 0;
                 const totalSold = variant.totalSold || 0;
@@ -49,7 +54,10 @@ const ProductSales = ({ products = [] }) => {
                 (item.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
                 (item.sku || '').toLowerCase().includes(searchQuery.toLowerCase())
             )
-            .sort((a, b) => b.totalSold - a.totalSold);
+            .sort((a, b) => {
+                if (b.totalSold !== a.totalSold) return b.totalSold - a.totalSold;
+                return a.name.localeCompare(b.name, undefined, { numeric: true });
+            });
     }, [products, categoryFilter, searchQuery]);
 
     // Summaries

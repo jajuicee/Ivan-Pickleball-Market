@@ -16,7 +16,8 @@ import {
     Truck,
     BarChart2,
     Tablet,
-    Users
+    Users,
+    Activity
 } from 'lucide-react';
 
 // Main Page Components
@@ -31,10 +32,20 @@ import Supplies from './Supplies';
 import Suppliers from './Suppliers';
 import ProductSales from './ProductSales';
 import ConsigneesPage from './ConsigneesPage';
+import Reporting from './Reporting';
+import PasswordModal from './PasswordModal';
 
 const Dashboard = () => {
     const location = useLocation();
     const navigate = useNavigate();
+    const [unlockedPath, setUnlockedPath] = useState(null);
+
+    // Reset unlocked status when navigating away
+    useEffect(() => {
+        if (unlockedPath && location.pathname !== unlockedPath) {
+            setUnlockedPath(null);
+        }
+    }, [location.pathname, unlockedPath]);
 
     // ─── SINGLE SHARED DATA FETCH ────────────────────────────────────────────
     const [products, setProducts] = useState([]);
@@ -71,6 +82,7 @@ const Dashboard = () => {
         { name: 'Product Sales',   path: '/product-sales',    icon: BarChart2 },
         { name: 'Order History',   path: '/history',          icon: History },
         { name: 'Consignees',      path: '/consignees',       icon: Users },
+        { name: 'Reporting',       path: '/reporting',        icon: Activity },
         { name: 'Analytics',       path: '/analytics',        icon: TrendingUp },
         { name: 'Expenses',        path: '/expenses',         icon: Receipt },
     ];
@@ -162,16 +174,26 @@ const Dashboard = () => {
                         style={{ animation: 'pageSlideIn 380ms cubic-bezier(0.16, 1, 0.3, 1) both' }}
                     >
                         <Routes>
-                            <Route path="/" element={<Navigate to="/inventory" replace />} />
+                            <Route path="/" element={<Navigate to="/orders" replace />} />
                             <Route path="/orders" element={<OrderPage products={products} loading={loadingProducts} refetchProducts={fetchProducts} />} />
                             <Route path="/add-product" element={<AddProduct onProductAdded={fetchProducts} />} />
-                            <Route path="/inventory" element={<Inventory products={products} loading={loadingProducts} refetchProducts={fetchProducts} />} />
-                            <Route path="/manage-inventory" element={<ManageInventory products={products} loading={loadingProducts} refetchProducts={fetchProducts} />} />
+                            <Route path="/inventory" element={
+                                unlockedPath === '/inventory' ? <Inventory products={products} loading={loadingProducts} refetchProducts={fetchProducts} /> 
+                                : <PasswordModal title="Inventory Access" onConfirm={() => setUnlockedPath('/inventory')} onCancel={() => navigate('/orders')} />
+                            } />
+                            <Route path="/manage-inventory" element={
+                                unlockedPath === '/manage-inventory' ? <ManageInventory products={products} loading={loadingProducts} refetchProducts={fetchProducts} />
+                                : <PasswordModal title="Manage Inventory Access" onConfirm={() => setUnlockedPath('/manage-inventory')} onCancel={() => navigate('/orders')} />
+                            } />
                             <Route path="/supplies" element={<Supplies />} />
                             <Route path="/suppliers" element={<Suppliers />} />
                             <Route path="/product-sales" element={<ProductSales products={products} />} />
                             <Route path="/history" element={<OrderHistory />} />
                             <Route path="/consignees" element={<ConsigneesPage />} />
+                            <Route path="/reporting" element={
+                                unlockedPath === '/reporting' ? <Reporting />
+                                : <PasswordModal title="Reporting Access" onConfirm={() => setUnlockedPath('/reporting')} onCancel={() => navigate('/orders')} />
+                            } />
                             <Route path="/analytics" element={<Analytics />} />
                             <Route path="/expenses" element={<Expenses />} />
                         </Routes>

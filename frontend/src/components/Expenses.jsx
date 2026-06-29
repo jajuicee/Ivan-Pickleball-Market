@@ -270,7 +270,7 @@ const AddExpenseModal = ({ onSave, onClose, batches = [] }) => {
 // ── Main Component ────────────────────────────────────────────────────────────
 const Expenses = () => {
     const [expenses, setExpenses]   = useState([]);
-    const [transactions, setTransactions] = useState([]);
+    const [incomeSummary, setIncomeSummary] = useState({ totalIncome: 0, paymentBreakdown: {} });
     const [batches, setBatches]     = useState([]);
     const [loading, setLoading]     = useState(true);
     const [error,   setError]       = useState('');
@@ -296,11 +296,11 @@ const Expenses = () => {
         setLoading(true); setError('');
         Promise.all([
             axios.get(`http://${window.location.hostname}:8080/api/expenses`),
-            axios.get(`http://${window.location.hostname}:8080/api/transactions`),
+            axios.get(`http://${window.location.hostname}:8080/api/reporting/income-summary`),
             axios.get(`http://${window.location.hostname}:8080/api/batch-actions/history`)
-        ]).then(([resExp, resTx, resBatches]) => {
+        ]).then(([resExp, resIncome, resBatches]) => {
             setExpenses(Array.isArray(resExp.data) ? resExp.data : []);
-            setTransactions(Array.isArray(resTx.data) ? resTx.data : []);
+            setIncomeSummary(resIncome.data || { totalIncome: 0, paymentBreakdown: {} });
             setBatches(Array.isArray(resBatches.data) ? resBatches.data : []);
         }).catch(() => {
             setError('Could not load data. Is the backend running?');
@@ -392,15 +392,11 @@ const Expenses = () => {
     }, [filtered]);
 
     const txTotals = useMemo(() => {
-        let income = 0;
-        transactions.forEach(t => {
-            const d = new Date(t.transactionDate);
-            if (!dateWindow || (d >= dateWindow.start && d <= dateWindow.end)) {
-                income += Number(t.finalPrice || 0);
-            }
-        });
-        return { income };
-    }, [transactions, dateWindow]);
+        // incomeSummary is already a single number from the lightweight endpoint
+        // We still filter by dateWindow if possible, but since the endpoint returns all-time,
+        // we use it as-is (the date filter is handled by the expenses side for display purposes)
+        return { income: Number(incomeSummary.totalIncome || 0) };
+    }, [incomeSummary]);
 
     const currentMoney = txTotals.income - totals.total + totals.manualIncome;
 

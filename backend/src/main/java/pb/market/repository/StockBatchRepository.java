@@ -9,6 +9,12 @@ import pb.market.entity.StockBatch;
 import java.util.List;
 
 public interface StockBatchRepository extends JpaRepository<StockBatch, Long> {
+    @Query("SELECT b.variant.id, b.quantity, b.restockedAt FROM StockBatch b WHERE b.variant IS NOT NULL AND b.quantity IS NOT NULL")
+    List<Object[]> findAllVariantIdsQuantitiesAndDates();
+
+    @Query("SELECT b FROM StockBatch b JOIN FETCH b.variant v JOIN FETCH v.product")
+    List<StockBatch> findAllWithDetails();
+
     // Used by StockBatchController to display ALL batches for a variant (all statuses)
     List<StockBatch> findByVariantIdOrderByConsignedAscRestockedAtAsc(Long variantId);
 

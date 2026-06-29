@@ -1,0 +1,93 @@
+{
+    "value":  [
+                  {
+                      "id":  543,
+                      "quantity":  2,
+                      "remainingQuantity":  0,
+                      "acquisitionPrice":  9800.00,
+                      "consigned":  false,
+                      "restockedAt":  "2026-05-17T09:19:17.77741",
+                      "batchId":  "16bbff5c-6dd7-4567-b4dd-d646ef58f45a",
+                      "supplier":  {
+                                       "id":  4,
+                                       "name":  "BAO LONG"
+                                   }
+                  },
+                  {
+                      "id":  566,
+                      "quantity":  4,
+                      "remainingQuantity":  2,
+                      "acquisitionPrice":  9800.00,
+                      "consigned":  false,
+                      "restockedAt":  "2026-05-19T21:44:00.753816",
+                      "batchId":  "d3c9443e-0117-49d8-bb10-a9dfc413562b",
+                      "supplier":  {
+                                       "id":  4,
+                                       "name":  "BAO LONG"
+                                   }
+                  },
+                  {
+                      "id":  607,
+                      "quantity":  12,
+                      "remainingQuantity":  1,
+                      "acquisitionPrice":  9800.00,
+                      "consigned":  false,
+                      "restockedAt":  "2026-05-24T16:19:50.178561",
+                      "batchId":  "9721ca26-038a-4941-85f2-44fc477fdcb3",
+                      "supplier":  {
+                                       "id":  4,
+                                       "name":  "BAO LONG"
+                                   }
+                  },
+                  {
+                      "id":  696,
+                      "quantity":  8,
+                      "remainingQuantity":  0,
+                      "acquisitionPrice":  9800.00,
+                      "consigned":  false,
+                      "restockedAt":  "2026-06-02T15:20:16.703756",
+                      "batchId":  "d693aadb-5457-4eef-adca-381a2e056cd3",
+                      "supplier":  {
+                                       "id":  4,
+                                       "name":  "BAO LONG"
+                                   }
+                  },
+                  {
+                      "id":  720,
+                      "quantity":  6,
+                      "remainingQuantity":  2,
+                      "acquisitionPrice":  9800.00,
+                      "consigned":  false,
+                      "restockedAt":  "2026-06-05T06:44:43.07469",
+                      "batchId":  "e58a81b3-ec7a-469f-8026-be164bcea0ba",
+                      "supplier":  {
+                                       "id":  3,
+                                       "name":  "MY STOCKS "
+                                   }
+                  },
+                  {
+                      "id":  782,
+                      "quantity":  1,
+                      "remainingQuantity":  1,
+                      "acquisitionPrice":  9800.00,
+                      "consigned":  false,
+                      "restockedAt":  "2026-06-08T21:35:25.017187",
+                      "batchId":  "6b08db66-3702-4f02-a238-e326686064b8",
+                      "supplier":  null
+                  },
+                  {
+                      "id":  811,
+                      "quantity":  9,
+                      "remainingQuantity":  9,
+                      "acquisitionPrice":  9800.00,
+                      "consigned":  false,
+                      "restockedAt":  "2026-06-09T16:11:56.15417",
+                      "batchId":  "46b97945-52ce-438e-9cbc-67b1461999d1",
+                      "supplier":  {
+                                       "id":  4,
+                                       "name":  "BAO LONG"
+                                   }
+                  }
+              ],
+    "Count":  7
+}

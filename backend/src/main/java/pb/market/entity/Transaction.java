@@ -24,7 +24,7 @@ public class Transaction {
     private ProductVariant variant;
 
     private String customerName;
-    private String paymentMethod; // GCash, Bank Transfer, GoTyme, Split Payment
+    private String paymentMethod; // GCash, Banko, BDO, GoTyme, Cash, Split Payment
     private String paymentDetails; // Detailed string if split payment (e.g., GCash (500) + Cash (300))
     private String status;        // FULL or PARTIAL
     
@@ -54,6 +54,9 @@ public class Transaction {
     @JoinColumn(name = "consignee_id")
     @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
     private Consignee consignee;
+
+    @Transient
+    private java.util.List<java.util.Map<String, Object>> splits;
 
     @PrePersist
     protected void onCreate() {

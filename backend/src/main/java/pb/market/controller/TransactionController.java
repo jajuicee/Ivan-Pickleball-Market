@@ -5,16 +5,19 @@ import pb.market.config.StockWebSocketHandler;
 import pb.market.entity.ProductVariant;
 import pb.market.entity.StockBatch;
 import pb.market.entity.Transaction;
+import pb.market.entity.PaymentLog;
 import pb.market.repository.StockBatchRepository;
 import pb.market.repository.TransactionRepository;
 import pb.market.repository.VariantRepository;
 import pb.market.repository.ConsigneeRepository;
+import pb.market.repository.PaymentLogRepository;
 import pb.market.entity.Consignee;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -30,6 +33,7 @@ public class TransactionController {
     private final EntityManager entityManager;
     private final StockWebSocketHandler stockWebSocketHandler;
     private final ConsigneeRepository consigneeRepository;
+    private final PaymentLogRepository paymentLogRepository;
 
     // ── Create a new transaction + deduct 1 from stock ───────────────────────
     @Transactional
@@ -72,6 +76,30 @@ public class TransactionController {
 
         // Save the transaction
         Transaction saved = transactionRepository.save(transaction);
+
+        // If paid at checkout, create a payment log immediately
+        if (transaction.getSplits() != null && !transaction.getSplits().isEmpty()) {
+            for (java.util.Map<String, Object> split : transaction.getSplits()) {
+                BigDecimal amt = new BigDecimal(split.get("amount").toString());
+                String method = String.valueOf(split.get("method"));
+                BigDecimal finalPrice = saved.getFinalPrice() != null && saved.getFinalPrice().compareTo(BigDecimal.ZERO) > 0 ? saved.getFinalPrice() : BigDecimal.ONE;
+                BigDecimal cost = saved.getCostPrice() != null ? saved.getCostPrice() : BigDecimal.ZERO;
+                BigDecimal costPortion = cost.multiply(amt).divide(finalPrice, 2, java.math.RoundingMode.HALF_UP);
+                createPaymentLog(saved, amt, costPortion, method);
+            }
+        } else if ("FULL".equalsIgnoreCase(saved.getStatus())) {
+            BigDecimal finalPrice = saved.getFinalPrice() != null ? saved.getFinalPrice() : BigDecimal.ZERO;
+            BigDecimal cost = saved.getCostPrice() != null ? saved.getCostPrice() : BigDecimal.ZERO;
+            createPaymentLog(saved, finalPrice, cost, saved.getPaymentMethod());
+        } else if ("PARTIAL".equalsIgnoreCase(saved.getStatus())) {
+            BigDecimal downpayment = saved.getDownpayment() != null ? saved.getDownpayment() : BigDecimal.ZERO;
+            if (downpayment.compareTo(BigDecimal.ZERO) > 0) {
+                BigDecimal finalPrice = saved.getFinalPrice() != null && saved.getFinalPrice().compareTo(BigDecimal.ZERO) > 0 ? saved.getFinalPrice() : BigDecimal.ONE;
+                BigDecimal cost = saved.getCostPrice() != null ? saved.getCostPrice() : BigDecimal.ZERO;
+                BigDecimal costPortion = cost.multiply(downpayment).divide(finalPrice, 2, java.math.RoundingMode.HALF_UP);
+                createPaymentLog(saved, downpayment, costPortion, saved.getPaymentMethod());
+            }
+        }
         
         // Reload with JOIN FETCH so lazy relations are initialized before JSON serialization
         ResponseEntity<?> response = ResponseEntity.ok(transactionRepository.findByIdWithDetails(saved.getId()).orElse(saved));
@@ -88,31 +116,26 @@ public class TransactionController {
             @RequestParam(value = "from", required = false) String fromStr,
             @RequestParam(value = "to",   required = false) String toStr,
             @RequestParam(value = "limit", required = false, defaultValue = "100000") int limit) {
+        org.springframework.data.domain.Pageable page = org.springframework.data.domain.PageRequest.of(0, limit);
         if (fromStr != null && toStr != null) {
             java.time.LocalDateTime from = java.time.LocalDateTime.parse(fromStr);
             java.time.LocalDateTime to   = java.time.LocalDateTime.parse(toStr);
-            return transactionRepository.findAllWithDetailsInRange(from, to,
-                    org.springframework.data.domain.PageRequest.of(0, limit));
+            return transactionRepository.findAllWithDetailsByActivityDate(from, to, page);
         }
-        return transactionRepository.findAllWithDetails(
-                org.springframework.data.domain.PageRequest.of(0, limit));
+        return transactionRepository.findAllWithDetails(page);
     }
 
     // ── Get only CONSIGNMENT transactions (for ConsigneesPage) ───────────────
     @GetMapping("/consignment")
     public List<Transaction> getConsignmentAll() {
-        // Fetch all, then filter — consignment records are a small fraction
-        return transactionRepository.findAllWithDetails(
-                org.springframework.data.domain.PageRequest.of(0, 100000))
-                .stream()
-                .filter(t -> "CONSIGNMENT".equals(t.getTransactionType()))
-                .collect(java.util.stream.Collectors.toList());
+        return transactionRepository.findAllConsignmentWithDetails(
+                org.springframework.data.domain.PageRequest.of(0, 100000));
     }
 
     // ── Mark a PARTIAL transaction as FULL once remaining balance is paid ─────
     @Transactional
     @PatchMapping("/{id}/complete")
-    public ResponseEntity<?> complete(@PathVariable("id") Long id) {
+    public ResponseEntity<?> complete(@PathVariable("id") Long id, @RequestBody(required = false) Map<String, String> body) {
         Transaction t = transactionRepository.findById(id).orElse(null);
         if (t == null) {
             return ResponseEntity.notFound().build();
@@ -120,8 +143,26 @@ public class TransactionController {
         if ("FULL".equalsIgnoreCase(t.getStatus())) {
             return ResponseEntity.badRequest().body(Map.of("error", "Transaction is already completed."));
         }
+        
+        String reqMethod = (body != null && body.containsKey("paymentMethod")) ? body.get("paymentMethod") : null;
+        if (reqMethod != null && !reqMethod.isBlank()) {
+            t.setPaymentMethod(reqMethod);
+        }
+
+        BigDecimal finalPrice = t.getFinalPrice() != null ? t.getFinalPrice() : BigDecimal.ZERO;
+        BigDecimal downpayment = t.getDownpayment() != null ? t.getDownpayment() : BigDecimal.ZERO;
+        BigDecimal remainingBalance = finalPrice.subtract(downpayment);
+        BigDecimal cost = t.getCostPrice() != null ? t.getCostPrice() : BigDecimal.ZERO;
+        // Cost portion for remaining balance
+        BigDecimal costPortion = finalPrice.compareTo(BigDecimal.ZERO) > 0
+                ? cost.multiply(remainingBalance).divide(finalPrice, 2, java.math.RoundingMode.HALF_UP)
+                : BigDecimal.ZERO;
+
         t.setStatus("FULL");
         transactionRepository.save(t);
+
+        createPaymentLog(t, remainingBalance, costPortion, t.getPaymentMethod());
+
         return ResponseEntity.ok(Map.of("message", "Transaction marked as completed.", "transactionId", id));
     }
 
@@ -130,11 +171,16 @@ public class TransactionController {
     @PatchMapping("/group/{transactionId}/payment")
     public ResponseEntity<?> updatePaymentMethod(
             @PathVariable("transactionId") String transactionId,
-            @RequestBody Map<String, String> body) {
+            @RequestBody Map<String, Object> body) {
 
-        String newMethod = body.get("paymentMethod");
+        String newMethod = body.containsKey("paymentMethod") ? String.valueOf(body.get("paymentMethod")) : null;
         if (newMethod == null || newMethod.isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("error", "paymentMethod is required."));
+        }
+        
+        boolean updateLogs = false;
+        if (body.containsKey("updateLogs")) {
+            updateLogs = Boolean.parseBoolean(String.valueOf(body.get("updateLogs")));
         }
 
         List<Transaction> group;
@@ -158,13 +204,26 @@ public class TransactionController {
             transactionRepository.save(tx);
         }
 
+        if (updateLogs) {
+            List<pb.market.entity.PaymentLog> logs = paymentLogRepository.findByOrderId(transactionId);
+            for (pb.market.entity.PaymentLog log : logs) {
+                log.setPaymentMethod(newMethod);
+                paymentLogRepository.save(log);
+            }
+        }
+
         return ResponseEntity.ok(Map.of("message", "Payment method updated.", "transactionId", transactionId));
     }
 
     // ── Mark all PARTIAL/UNPAID items in a group as FULL ──────────────────────
     @Transactional
     @PatchMapping("/group/{transactionId}/complete")
-    public ResponseEntity<?> completeGroup(@PathVariable("transactionId") String transactionId) {
+    public ResponseEntity<?> completeGroup(
+            @PathVariable("transactionId") String transactionId,
+            @RequestBody(required = false) Map<String, String> body) {
+        
+        String reqMethod = (body != null && body.containsKey("paymentMethod")) ? body.get("paymentMethod") : null;
+        
         List<Transaction> group;
         if (transactionId.startsWith("LEGACY-")) {
             try {
@@ -184,8 +243,22 @@ public class TransactionController {
         boolean updated = false;
         for (Transaction tx : group) {
             if (!"FULL".equalsIgnoreCase(tx.getStatus())) {
+                if (reqMethod != null && !reqMethod.isBlank()) {
+                    tx.setPaymentMethod(reqMethod);
+                }
+                
+                BigDecimal finalPrice = tx.getFinalPrice() != null ? tx.getFinalPrice() : BigDecimal.ZERO;
+                BigDecimal downpayment = tx.getDownpayment() != null ? tx.getDownpayment() : BigDecimal.ZERO;
+                BigDecimal remainingBalance = finalPrice.subtract(downpayment);
+                BigDecimal cost = tx.getCostPrice() != null ? tx.getCostPrice() : BigDecimal.ZERO;
+                BigDecimal costPortion = finalPrice.compareTo(BigDecimal.ZERO) > 0
+                        ? cost.multiply(remainingBalance).divide(finalPrice, 2, java.math.RoundingMode.HALF_UP)
+                        : BigDecimal.ZERO;
+
                 tx.setStatus("FULL");
                 transactionRepository.save(tx);
+
+                createPaymentLog(tx, remainingBalance, costPortion, tx.getPaymentMethod());
                 updated = true;
             }
         }
@@ -236,11 +309,17 @@ public class TransactionController {
         }
 
         java.math.BigDecimal remainingPayment = amount;
+        String reqMethod = body.containsKey("paymentMethod") ? body.get("paymentMethod").toString() : null;
+
         boolean updated = false;
 
         for (Transaction tx : group) {
             if ("FULL".equalsIgnoreCase(tx.getStatus())) {
                 continue;
+            }
+
+            if (reqMethod != null && !reqMethod.isBlank()) {
+                tx.setPaymentMethod(reqMethod);
             }
 
             java.math.BigDecimal finalPrice = tx.getFinalPrice() != null ? tx.getFinalPrice() : java.math.BigDecimal.ZERO;
@@ -259,16 +338,30 @@ public class TransactionController {
 
             if (remainingPayment.compareTo(balance) >= 0) {
                 // Fully pay this item
+                BigDecimal paidAmount = balance;
                 tx.setDownpayment(finalPrice);
                 tx.setStatus("FULL");
                 remainingPayment = remainingPayment.subtract(balance);
                 updated = true;
+
+                BigDecimal cost = tx.getCostPrice() != null ? tx.getCostPrice() : BigDecimal.ZERO;
+                BigDecimal costPortion = finalPrice.compareTo(BigDecimal.ZERO) > 0
+                        ? cost.multiply(paidAmount).divide(finalPrice, 2, java.math.RoundingMode.HALF_UP)
+                        : BigDecimal.ZERO;
+                createPaymentLog(tx, paidAmount, costPortion, tx.getPaymentMethod());
             } else {
                 // Partially pay this item
+                BigDecimal paidAmount = remainingPayment;
                 tx.setDownpayment(downpayment.add(remainingPayment));
                 tx.setStatus("PARTIAL");
                 remainingPayment = java.math.BigDecimal.ZERO;
                 updated = true;
+
+                BigDecimal cost = tx.getCostPrice() != null ? tx.getCostPrice() : BigDecimal.ZERO;
+                BigDecimal costPortion = finalPrice.compareTo(BigDecimal.ZERO) > 0
+                        ? cost.multiply(paidAmount).divide(finalPrice, 2, java.math.RoundingMode.HALF_UP)
+                        : BigDecimal.ZERO;
+                createPaymentLog(tx, paidAmount, costPortion, tx.getPaymentMethod());
             }
             transactionRepository.save(tx);
         }
@@ -310,12 +403,18 @@ public class TransactionController {
             t.getFinalPrice() != null ? t.getFinalPrice() : java.math.BigDecimal.ZERO
         ));
 
+        String reqMethod = body.containsKey("paymentMethod") ? body.get("paymentMethod").toString() : null;
+
         java.math.BigDecimal remainingPayment = amount;
         boolean updated = false;
 
         for (Transaction tx : itemsToPay) {
             if ("FULL".equalsIgnoreCase(tx.getStatus())) {
                 continue;
+            }
+
+            if (reqMethod != null && !reqMethod.isBlank()) {
+                tx.setPaymentMethod(reqMethod);
             }
 
             java.math.BigDecimal finalPrice = tx.getFinalPrice() != null ? tx.getFinalPrice() : java.math.BigDecimal.ZERO;
@@ -334,16 +433,30 @@ public class TransactionController {
 
             if (remainingPayment.compareTo(balance) >= 0) {
                 // Fully pay this item
+                BigDecimal paidAmount = balance;
                 tx.setDownpayment(finalPrice);
                 tx.setStatus("FULL");
                 remainingPayment = remainingPayment.subtract(balance);
                 updated = true;
+
+                BigDecimal cost = tx.getCostPrice() != null ? tx.getCostPrice() : BigDecimal.ZERO;
+                BigDecimal costPortion = finalPrice.compareTo(BigDecimal.ZERO) > 0
+                        ? cost.multiply(paidAmount).divide(finalPrice, 2, java.math.RoundingMode.HALF_UP)
+                        : BigDecimal.ZERO;
+                createPaymentLog(tx, paidAmount, costPortion, tx.getPaymentMethod());
             } else {
                 // Partially pay this item
+                BigDecimal paidAmount = remainingPayment;
                 tx.setDownpayment(downpayment.add(remainingPayment));
                 tx.setStatus("PARTIAL");
                 remainingPayment = java.math.BigDecimal.ZERO;
                 updated = true;
+
+                BigDecimal cost = tx.getCostPrice() != null ? tx.getCostPrice() : BigDecimal.ZERO;
+                BigDecimal costPortion = finalPrice.compareTo(BigDecimal.ZERO) > 0
+                        ? cost.multiply(paidAmount).divide(finalPrice, 2, java.math.RoundingMode.HALF_UP)
+                        : BigDecimal.ZERO;
+                createPaymentLog(tx, paidAmount, costPortion, tx.getPaymentMethod());
             }
             transactionRepository.save(tx);
         }
@@ -390,6 +503,9 @@ public class TransactionController {
     @Transactional
     @PostMapping("/cancel/{transactionId}")
     public ResponseEntity<?> cancelOrder(@PathVariable("transactionId") String transactionId) {
+        // Delete all payment logs for this order
+        paymentLogRepository.deleteByOrderId(transactionId);
+
         List<Transaction> group;
         if (transactionId.startsWith("LEGACY-")) {
             try {
@@ -451,5 +567,19 @@ public class TransactionController {
     // ── Broadcast helper — called after order cancel to push stock refresh ────
     private void broadcastAfterCancel() {
         stockWebSocketHandler.broadcastStockUpdate();
+    }
+
+    // ── Helper: create a payment log entry ────────────────────────────────────
+    private void createPaymentLog(Transaction tx, BigDecimal amount, BigDecimal costPortion, String paymentMethod) {
+        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) return;
+
+        PaymentLog log = new PaymentLog();
+        log.setTransaction(tx);
+        log.setOrderId(tx.getTransactionId() != null ? tx.getTransactionId() : "LEGACY-" + tx.getId());
+        log.setAmount(amount);
+        log.setCostPortion(costPortion);
+        log.setPaymentMethod(paymentMethod != null ? paymentMethod : "Unknown");
+        // paymentDate auto-set by @PrePersist
+        paymentLogRepository.save(log);
     }
 }

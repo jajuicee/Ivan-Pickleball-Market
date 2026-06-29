@@ -32,6 +32,7 @@ public class ProductController {
     }
 
     @PostMapping
+    @Transactional
     public ResponseEntity<?> create(@RequestBody Product product) {
         if (product.getBrandName() == null || product.getBrandName().isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("error", "Brand name is required."));
@@ -42,15 +43,62 @@ public class ProductController {
         if (product.getVariants() == null || product.getVariants().isEmpty()) {
             return ResponseEntity.badRequest().body(Map.of("error", "At least one variant is required."));
         }
-        // Auto-fill blank SKUs server-side for misc/accessory items so the client doesn't have to
-        // generate them with Math.random() (which collides). Paddle SKUs are still required from the UI.
+
+        // Auto-fill blank SKUs server-side
         String brandSlug = product.getBrandName().trim().toUpperCase().replaceAll("[^A-Z0-9]+", "");
         if (brandSlug.length() > 6) brandSlug = brandSlug.substring(0, 6);
+        final String slug = brandSlug;
         for (ProductVariant v : product.getVariants()) {
             if (v.getSku() == null || v.getSku().isBlank()) {
-                v.setSku(brandSlug + "-" + System.currentTimeMillis() + "-" + Math.abs(v.hashCode() % 1000));
+                v.setSku(slug + "-" + System.currentTimeMillis() + "-" + Math.abs(v.hashCode() % 1000));
             }
         }
+
+        // ── AUTO-MERGE: if a product with the same brand+model+category already exists,
+        // append the new variants to it instead of creating a duplicate product.
+        // This applies to ALL categories so that adding sizes to Shoes, or a new
+        // color to an existing Paddle model, just adds variants rather than a new row.
+        var existing = productService.findByBrandAndModelAndCategory(
+            product.getBrandName().trim(),
+            product.getModelName().trim(),
+            product.getCategory()
+        );
+
+        if (existing.isPresent()) {
+            Product existingProduct = existing.get();
+            // Collect existing SKUs so we don't add duplicates
+            java.util.Set<String> existingSkus = existingProduct.getVariants().stream()
+                .map(v -> v.getSku() != null ? v.getSku().toLowerCase() : "")
+                .collect(java.util.stream.Collectors.toSet());
+
+            int added = 0;
+            for (ProductVariant newVariant : product.getVariants()) {
+                String newSku = newVariant.getSku() != null ? newVariant.getSku().toLowerCase() : "";
+                if (existingSkus.contains(newSku)) {
+                    // SKU already exists in this product — skip to avoid duplicate
+                    continue;
+                }
+                newVariant.setProduct(existingProduct);
+                existingProduct.getVariants().add(newVariant);
+                added++;
+            }
+
+            if (added == 0) {
+                return ResponseEntity.badRequest().body(Map.of(
+                    "error", "All submitted SKUs already exist in '" + existingProduct.getBrandName() + " " + existingProduct.getModelName() + "'. No new variants were added."
+                ));
+            }
+
+            Product saved = productService.saveProduct(existingProduct);
+            Map<String, Object> result = new java.util.LinkedHashMap<>();
+            result.put("merged", true);
+            result.put("productId", saved.getId());
+            result.put("message", added + " new variant" + (added > 1 ? "s" : "") + " added to existing '" + saved.getBrandName() + " " + saved.getModelName() + "'.");
+            result.put("totalVariants", saved.getVariants().size());
+            return ResponseEntity.ok(result);
+        }
+
+        // No existing product found — create a fresh one as before
         return ResponseEntity.ok(productService.saveProduct(product));
     }
 

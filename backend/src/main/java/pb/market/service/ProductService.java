@@ -56,6 +56,12 @@ public class ProductService {
         return productRepository.findById(id);
     }
 
+    /** Find existing product by brand + model + category for auto-merge on POST. */
+    public java.util.Optional<Product> findByBrandAndModelAndCategory(String brand, String model, String category) {
+        List<Product> matches = productRepository.findByBrandAndModelAndCategory(brand, model, category);
+        return matches.isEmpty() ? java.util.Optional.empty() : java.util.Optional.of(matches.get(0));
+    }
+
     /** Save product fields only (no initial batch creation). Used for updates. */
     @Transactional
     public Product saveProductOnly(Product product) {

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import {
     Users, UserPlus, CreditCard, CheckCircle2, Loader2,
-    AlertCircle, X, Undo2, ChevronDown, ChevronRight
+    AlertCircle, X, Undo2, ChevronDown, Trash2
 } from 'lucide-react';
 
 const BASE = `http://${window.location.hostname}:8080`;
@@ -16,12 +16,16 @@ const ConsigneesPage = () => {
     const [selectedConsigneeId, setSelectedConsigneeId] = useState(null);
     const [showAddConsignee, setShowAddConsignee] = useState(false);
     const [newConsigneeName, setNewConsigneeName] = useState('');
+    const [deleteConfirm, setDeleteConfirm] = useState(null);
 
     // Payment states
     const [completing, setCompleting] = useState(null);
     const [payingGroup, setPayingGroup] = useState(null); // group being paid
     const [itemPaySelections, setItemPaySelections] = useState({}); // { [id]: boolean }
     const [customAmount, setCustomAmount] = useState('');
+    const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('GCash');
+
+    const PAYMENT_METHODS = ['GCash', 'Cash', 'Credit Card', 'BDO', 'Banko', 'Maya', 'Check', 'GoTyme'];
 
     // Return states
     const [returningItem, setReturningItem] = useState(null); // id being returned
@@ -29,6 +33,7 @@ const ConsigneesPage = () => {
 
     const [toast, setToast] = useState(null);
     const [expandedGroups, setExpandedGroups] = useState(new Set());
+    const [consigneeSort, setConsigneeSort] = useState('DATE_DESC'); // 'DATE_DESC' | 'DATE_ASC' | 'NAME'
 
     const showToast = (message, type = 'success') => {
         setToast({ message, type });
@@ -104,30 +109,34 @@ const ConsigneesPage = () => {
         return sorted;
     }, [transactions, selectedConsigneeId]);
 
+    // ── Sorted consignee list ─────────────────────────────────────────────────
+    const sortedConsignees = useMemo(() => {
+        // Build a map of consignee id → latest transaction date for date-based sorting
+        const latestDate = {};
+        transactions.forEach(t => {
+            const cid = t.consignee?.id;
+            if (!cid) return;
+            const d = new Date(t.transactionDate);
+            if (!latestDate[cid] || d > latestDate[cid]) latestDate[cid] = d;
+        });
+
+        return [...consignees].sort((a, b) => {
+            if (consigneeSort === 'NAME') {
+                return a.name.localeCompare(b.name, 'en', { sensitivity: 'base' });
+            }
+            // Date sort — consignees with no activity fall to the bottom
+            const da = latestDate[a.id] || new Date(0);
+            const db = latestDate[b.id] || new Date(0);
+            return consigneeSort === 'DATE_DESC' ? db - da : da - db;
+        });
+    }, [consignees, transactions, consigneeSort]);
+
     const toggleGroup = (orderId) => {
         setExpandedGroups(prev => {
             const next = new Set(prev);
             next.has(orderId) ? next.delete(orderId) : next.add(orderId);
             return next;
         });
-    };
-
-    // ── Mark all items in group as FULL ───────────────────────────────────────
-    const handleCompleteGroup = async (group) => {
-        setCompleting(group.orderId);
-        const unfinished = group.items.filter(i => i.status !== 'FULL');
-        try {
-            await Promise.all(unfinished.map(i =>
-                axios.patch(`${BASE}/api/transactions/${i.id}/complete`)
-            ));
-            await fetchData();
-            showToast('Consignment marked as fully paid.', 'success');
-        } catch {
-            await fetchData();
-            showToast('Error completing payment.', 'error');
-        } finally {
-            setCompleting(null);
-        }
     };
 
     // ── Open Pay Amount modal ─────────────────────────────────────────────────
@@ -138,6 +147,7 @@ const ConsigneesPage = () => {
         unpaidItems.forEach(i => { sel[i.id] = true; });
         setItemPaySelections(sel);
         setCustomAmount('');
+        setSelectedPaymentMethod('GCash');
         setPayingGroup(group);
     };
 
@@ -203,7 +213,8 @@ const ConsigneesPage = () => {
         try {
             await axios.patch(`${BASE}/api/transactions/pay-selected`, {
                 itemIds: selectedIds,
-                amount: amountToPay
+                amount: amountToPay,
+                paymentMethod: selectedPaymentMethod
             });
             await fetchData();
             showToast(`Applied payment of ${fmt(amountToPay)} to selected item(s).`, 'success');
@@ -227,6 +238,19 @@ const ConsigneesPage = () => {
             showToast(err.response?.data?.error || 'Failed to return item.', 'error');
         } finally {
             setReturningItem(null);
+        }
+    };
+
+    // ── Delete Consignee ──────────────────────────────────────────────────────
+    const handleDeleteConsignee = async (id) => {
+        try {
+            await axios.delete(`${BASE}/api/consignees/${id}`);
+            showToast('Consignee deleted successfully.', 'success');
+            setDeleteConfirm(null);
+            if (selectedConsigneeId === id) setSelectedConsigneeId(null);
+            fetchData();
+        } catch (err) {
+            showToast(err.response?.data?.error || 'Failed to delete consignee.', 'error');
         }
     };
 
@@ -260,25 +284,56 @@ const ConsigneesPage = () => {
                     </button>
                 </div>
 
+                {/* Sort toggle */}
+                <div className="flex gap-1 px-3 py-2 border-b border-stone-100 bg-stone-50 shrink-0">
+                    {[
+                        { id: 'DATE_DESC', label: 'Newest' },
+                        { id: 'DATE_ASC',  label: 'Oldest' },
+                        { id: 'NAME',      label: 'A–Z' },
+                    ].map(opt => (
+                        <button
+                            key={opt.id}
+                            onClick={() => setConsigneeSort(opt.id)}
+                            className="flex-1 py-1 text-[11px] font-bold rounded-md transition-colors"
+                            style={{
+                                backgroundColor: consigneeSort === opt.id ? '#09090b' : '#f1f5f9',
+                                color: consigneeSort === opt.id ? '#ffffff' : '#64748b',
+                            }}
+                        >
+                            {opt.label}
+                        </button>
+                    ))}
+                </div>
+
                 <div className="flex-1 overflow-y-auto p-2">
                     {loading ? (
                         <div className="p-4 text-center text-zinc-400 flex flex-col items-center gap-2">
                             <Loader2 className="animate-spin" size={20} /> Loading...
                         </div>
-                    ) : consignees.length === 0 ? (
+                    ) : sortedConsignees.length === 0 ? (
                         <div className="p-8 text-center text-zinc-400 text-sm">No consignees yet. Add one!</div>
                     ) : (
-                        consignees.map(c => (
+                        sortedConsignees.map(c => (
                             <button
                                 key={c.id}
                                 onClick={() => setSelectedConsigneeId(c.id)}
-                                className={`w-full text-left px-4 py-3 mb-1 rounded-xl font-medium text-sm flex items-center justify-between transition-colors ${
+                                className={`group w-full text-left px-4 py-3 mb-1 rounded-xl font-medium text-sm flex items-center justify-between transition-colors ${
                                     selectedConsigneeId === c.id
                                         ? 'bg-zinc-900 text-white shadow-md'
                                         : 'hover:bg-stone-100 text-zinc-700'
                                 }`}
                             >
                                 <span>{c.name}</span>
+                                <div
+                                    onClick={(e) => { e.stopPropagation(); setDeleteConfirm(c.id); }}
+                                    className={`p-1.5 rounded-lg transition-opacity ${
+                                        selectedConsigneeId === c.id 
+                                            ? 'text-zinc-400 hover:text-white hover:bg-zinc-700 opacity-100' 
+                                            : 'opacity-0 group-hover:opacity-100 text-zinc-400 hover:text-red-600 hover:bg-red-50'
+                                    }`}
+                                >
+                                    <Trash2 size={14} />
+                                </div>
                             </button>
                         ))
                     )}
@@ -358,21 +413,11 @@ const ConsigneesPage = () => {
                                                                 <div className="text-sm font-black text-amber-600 font-mono">{fmt(group.totalUnpaid)}</div>
                                                             </div>
                                                             <button
-                                                                onClick={() => handleCompleteGroup(group)}
+                                                                onClick={() => openPayModal(group)}
                                                                 disabled={completing === group.orderId}
                                                                 className="flex items-center gap-1 bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold disabled:opacity-50 transition-colors shadow-sm"
                                                             >
-                                                                {completing === group.orderId
-                                                                    ? <Loader2 size={12} className="animate-spin" />
-                                                                    : <CheckCircle2 size={12} />}
-                                                                All Paid
-                                                            </button>
-                                                            <button
-                                                                onClick={() => openPayModal(group)}
-                                                                disabled={completing === group.orderId}
-                                                                className="text-xs font-bold text-blue-600 border border-blue-200 px-3 py-1.5 rounded-lg hover:bg-blue-50 transition-colors"
-                                                            >
-                                                                Pay Amount
+                                                                <CreditCard size={12} /> Pay Balance
                                                             </button>
                                                         </>
                                                     ) : (
@@ -529,6 +574,29 @@ const ConsigneesPage = () => {
                                     </div>
                                     <p className="text-[10px] text-zinc-400 mt-1.5">Or manually check the paddles below.</p>
                                 </div>
+                                
+                                {/* Payment Method Selector */}
+                                <div className="px-5 py-3 border-b border-stone-100 shrink-0">
+                                    <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1.5 block">
+                                        Payment Method
+                                    </label>
+                                    <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+                                        {PAYMENT_METHODS.map(method => (
+                                            <button
+                                                key={method}
+                                                type="button"
+                                                onClick={() => setSelectedPaymentMethod(method)}
+                                                className="px-3 py-1.5 text-xs font-bold rounded-lg whitespace-nowrap transition-colors"
+                                                style={{
+                                                    backgroundColor: selectedPaymentMethod === method ? '#09090b' : '#f5f5f4',
+                                                    color: selectedPaymentMethod === method ? '#fff' : '#52525b',
+                                                }}
+                                            >
+                                                {method}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
 
                                 {/* Select All toggle */}
                                 <div className="px-5 py-2.5 flex items-center justify-between border-b border-stone-100 bg-stone-50 shrink-0">
@@ -662,6 +730,24 @@ const ConsigneesPage = () => {
                     </div>
                 );
             })()}
+            {/* ── Delete Confirm Modal ────────────────────────────────────── */}
+            {deleteConfirm && (
+                <div className="fixed inset-0 bg-zinc-950/60 z-[300] flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm text-center animate-fade-in-up">
+                        <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4 text-red-600">
+                            <Trash2 size={24} />
+                        </div>
+                        <h3 className="font-bold text-zinc-900 text-lg mb-1">Delete Consignee?</h3>
+                        <p className="text-sm text-zinc-500 mb-5">Consignees referenced by past transactions cannot be deleted. Are you sure?</p>
+                        <div className="flex gap-3">
+                            <button onClick={() => setDeleteConfirm(null)}
+                                className="flex-1 px-4 py-2.5 border border-stone-300 rounded-xl font-bold text-zinc-600 hover:bg-stone-50 transition-colors">Cancel</button>
+                            <button onClick={() => handleDeleteConsignee(deleteConfirm)}
+                                className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition-colors shadow-sm">Delete</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
