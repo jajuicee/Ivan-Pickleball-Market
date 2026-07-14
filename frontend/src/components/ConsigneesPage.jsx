@@ -25,7 +25,7 @@ const ConsigneesPage = () => {
     const [customAmount, setCustomAmount] = useState('');
     const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('GCash');
 
-    const PAYMENT_METHODS = ['GCash', 'Cash', 'Credit Card', 'BDO', 'Banko', 'Maya', 'Check', 'GoTyme'];
+    const PAYMENT_METHODS = ['GCash', 'Cash', 'Credit Card', 'BDO', 'BPI', 'Banko', 'Maya', 'Check', 'GoTyme'];
 
     // Return states
     const [returningItem, setReturningItem] = useState(null); // id being returned

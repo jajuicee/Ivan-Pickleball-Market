@@ -192,6 +192,7 @@ const PaymentFilter = ({ transactions, value, onChange }) => {
 
     const methods = useMemo(() => {
         const set = new Set(transactions.map(t => t.paymentMethod).filter(Boolean));
+        set.add('BPI');
         return ['All', ...Array.from(set).sort()];
     }, [transactions]);
 
@@ -761,6 +762,7 @@ const OrderHistory = () => {
     // Unique payment methods in data — mirrors Analytics PaymentFilter options
     const paymentMethods = useMemo(() => {
         const set = new Set(transactions.map(t => t.paymentMethod).filter(Boolean));
+        set.add('BPI');
         return Array.from(set).sort();
     }, [transactions]);
 

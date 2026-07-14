@@ -508,6 +508,7 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
                                 <option value="GCash">GCash</option>
                                 <option value="Banko">Banko</option>
                                 <option value="BDO">BDO</option>
+                                <option value="BPI">BPI</option>
                                 <option value="GoTyme">GoTyme</option>
                                 <option value="Cash">Cash</option>
                                 <option value="Credit Card">Credit Card</option>
@@ -531,6 +532,7 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
                                                 <option value="GCash">GCash</option>
                                                 <option value="Banko">Banko</option>
                                                 <option value="BDO">BDO</option>
+                                                <option value="BPI">BPI</option>
                                                 <option value="GoTyme">GoTyme</option>
                                                 <option value="Cash">Cash</option>
                                                 <option value="Credit Card">Credit Card</option>

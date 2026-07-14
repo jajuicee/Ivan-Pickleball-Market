@@ -3,7 +3,7 @@ import axios from 'axios';
 import {
     ClipboardList, Search, X, PlusCircle, MinusCircle, Layers,
     CheckCircle, AlertCircle, Loader2, Building2, PackagePlus, Trash2,
-    Pencil, AlertTriangle, PackageX, History, Save
+    Pencil, AlertTriangle, PackageX, History, Save, Printer
 } from 'lucide-react';
 import BatchAddModal from './BatchAddModal';
 import PasswordModal from './PasswordModal';
@@ -66,6 +66,209 @@ const ManageInventory = ({ products = [], loading = false, refetchProducts }) =>
     useEffect(() => {
         axios.get(`${BASE}/api/suppliers`).then(r => setSuppliers(r.data)).catch(() => {});
     }, []);
+
+    // ============ PRINT ============
+    const handlePrint = () => {
+        const printData = filteredInventory;
+        const dateStr = new Date().toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' });
+        const categoryLabel = categoryFilter === 'All' ? 'All Categories' : categoryFilter;
+
+        const dateHeaders = Array.from({ length: 7 }).map((_, i) => {
+            const d = new Date();
+            d.setDate(d.getDate() + i);
+            return d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' });
+        });
+
+        const rows = printData.map((row, i) => {
+            const model = `${row.brand} ${row.name}`;
+            let variant = '';
+            if (row.color && row.color !== '-') variant += row.color;
+            if (row.variantDetails && row.variantDetails !== '-') variant += (variant ? ' · ' : '') + row.variantDetails;
+            if (!variant) variant = '—';
+            return `
+                <tr class="${i % 2 === 0 ? 'even' : 'odd'}">
+                    <td class="num">${i + 1}</td>
+                    <td class="model">${model}</td>
+                    <td class="variant">${variant}</td>
+                    <td class="stock-cell"></td>
+                    <td class="stock-cell"></td>
+                    <td class="stock-cell"></td>
+                    <td class="stock-cell"></td>
+                    <td class="stock-cell"></td>
+                    <td class="stock-cell"></td>
+                    <td class="stock-cell"></td>
+                </tr>`;
+        }).join('');
+
+        const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>Stock Count Sheet — ${dateStr}</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            font-size: 10pt;
+            color: #111;
+            background: #fff;
+        }
+        @page {
+            size: A4 portrait;
+            margin: 14mm 14mm 14mm 14mm;
+        }
+        .page-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            border-bottom: 2.5px solid #111;
+            padding-bottom: 6px;
+            margin-bottom: 10px;
+        }
+        .page-header .title {
+            font-size: 16pt;
+            font-weight: 900;
+            letter-spacing: -0.5px;
+            color: #111;
+        }
+        .page-header .meta {
+            font-size: 8pt;
+            color: #555;
+            text-align: right;
+            line-height: 1.6;
+        }
+        .badge {
+            display: inline-block;
+            background: #f3f3f3;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 1px 7px;
+            font-size: 8pt;
+            font-weight: 700;
+            color: #333;
+            margin-bottom: 6px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 9pt;
+        }
+        thead th {
+            background: #111;
+            color: #fff;
+            font-weight: 800;
+            font-size: 7.5pt;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            padding: 6px 8px;
+            text-align: left;
+        }
+        thead th.stock-cell {
+            text-align: center;
+            width: 45px;
+        }
+        thead th.num {
+            width: 28px;
+            text-align: center;
+        }
+        tbody tr.even { background: #fff; }
+        tbody tr.odd  { background: #f9f9f9; }
+        tbody td {
+            padding: 5px 8px;
+            border-bottom: 1px solid #e8e8e8;
+            vertical-align: middle;
+        }
+        td.num {
+            color: #aaa;
+            font-size: 7.5pt;
+            text-align: center;
+        }
+        td.model {
+            font-weight: 700;
+            color: #111;
+        }
+        td.variant {
+            color: #555;
+            font-size: 8.5pt;
+        }
+        td.stock-cell {
+            width: 45px;
+            border: 1px solid #ccc;
+            background: #fafafa;
+            height: 28px;
+        }
+        .footer {
+            margin-top: 14px;
+            font-size: 7.5pt;
+            color: #aaa;
+            text-align: right;
+            border-top: 1px solid #e8e8e8;
+            padding-top: 6px;
+        }
+        .sig-row {
+            display: flex;
+            gap: 40px;
+            margin-top: 28px;
+        }
+        .sig-block {
+            flex: 1;
+            border-top: 1.5px solid #333;
+            padding-top: 4px;
+            font-size: 8pt;
+            color: #555;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <div class="page-header">
+        <div>
+            <div class="title">📋 Stock Count Sheet</div>
+            <div style="font-size:8.5pt;color:#555;margin-top:3px;">Ivan PB Market — Physical Inventory Verification</div>
+        </div>
+        <div class="meta">
+            <div><strong>Date:</strong> ${dateStr}</div>
+            <div><strong>Category:</strong> ${categoryLabel}</div>
+            <div><strong>Total SKUs:</strong> ${printData.length}</div>
+        </div>
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th class="num">#</th>
+                <th>Model</th>
+                <th>Variant</th>
+                <th class="stock-cell">${dateHeaders[0]}</th>
+                <th class="stock-cell">${dateHeaders[1]}</th>
+                <th class="stock-cell">${dateHeaders[2]}</th>
+                <th class="stock-cell">${dateHeaders[3]}</th>
+                <th class="stock-cell">${dateHeaders[4]}</th>
+                <th class="stock-cell">${dateHeaders[5]}</th>
+                <th class="stock-cell">${dateHeaders[6]}</th>
+            </tr>
+        </thead>
+        <tbody>
+            ${rows}
+        </tbody>
+    </table>
+
+    <div class="sig-row">
+        <div class="sig-block">Counted by: ____________________________</div>
+        <div class="sig-block">Verified by: ____________________________</div>
+        <div class="sig-block">Date counted: __________________________</div>
+    </div>
+
+    <div class="footer">Ivan PB Market · Stock Count Sheet · Generated ${dateStr} · ${printData.length} items</div>
+</body>
+</html>`;
+
+        const win = window.open('', '_blank');
+        win.document.write(html);
+        win.document.close();
+        win.focus();
+        setTimeout(() => win.print(), 400);
+    };
 
     // --- FLATTEN DATA ---
     const flattenedInventory = useMemo(() => {
@@ -302,6 +505,13 @@ const ManageInventory = ({ products = [], loading = false, refetchProducts }) =>
                     )}
                 </h2>
                 <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto justify-end">
+                    <button
+                        onClick={handlePrint}
+                        title={`Print stock count sheet (${filteredInventory.length} items)`}
+                        className="flex items-center gap-2 px-4 py-2 bg-white border border-stone-300 hover:bg-stone-50 hover:border-stone-400 text-zinc-700 text-sm font-bold rounded-lg shadow-sm transition-colors"
+                    >
+                        <Printer size={15} /> Print Sheet
+                    </button>
                     <button
                         onClick={() => setShowBatchAdd(true)}
                         className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-lg shadow-sm transition-colors"

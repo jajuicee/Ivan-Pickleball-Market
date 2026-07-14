@@ -297,12 +297,24 @@ const Analytics = () => {
             groupBy = diffDays > 60 ? 'month' : 'day';
         }
 
+        // Build a lookup: orderId → transactionType so we can filter payment logs by type
+        const txTypeMap = {};
+        transactions.forEach(t => {
+            if (t.transactionId) txTypeMap[t.transactionId] = t.transactionType || 'REGULAR';
+        });
+
         // ── Revenue & Profit: from PAYMENT LOGS (by actual payment date) ──────
         const validLogs = paymentLogs.filter(pl => {
             const pDate = new Date(pl.paymentDate);
             const inDate = pDate >= cutoffDate && pDate <= toDate;
             const inPayment = paymentFilter === 'All' || pl.paymentMethod === paymentFilter;
-            return inDate && inPayment;
+            const txType = txTypeMap[pl.orderId] || 'REGULAR';
+            const inType = typeFilter === 'All'
+                ? true
+                : typeFilter === 'REGULAR'
+                    ? txType !== 'CONSIGNMENT'
+                    : txType === 'CONSIGNMENT';
+            return inDate && inPayment && inType;
         }).map(pl => {
             const revenue = Number(pl.amount || 0);
             const cost = Number(pl.costPortion || 0);

@@ -113,8 +113,9 @@ const Inventory = ({ products = [], loading = false }) => {
         const grouped = {};
         filteredInventory.forEach(item => {
             const key = `${item.brand} ${item.name}`;
-            if (!grouped[key]) grouped[key] = { label: key, totalQty: 0, totalSold: 0, totalAdded: 0, variantCount: 0 };
+            if (!grouped[key]) grouped[key] = { label: key, totalQty: 0, totalValue: 0, totalSold: 0, totalAdded: 0, variantCount: 0 };
             grouped[key].totalQty += (item.quantity || 0);
+            grouped[key].totalValue += (item.quantity || 0) * (item.sellingPrice || 0);
             grouped[key].totalSold += (item.totalSold || 0);
             grouped[key].totalAdded += (item.totalAdded || 0);
             grouped[key].variantCount += 1;
@@ -216,6 +217,7 @@ const Inventory = ({ products = [], loading = false }) => {
                         <div key={group.label} className="flex items-center gap-2 px-3 py-1.5 bg-white border border-stone-200 rounded-full shadow-sm">
                             <span className="text-sm font-bold text-zinc-700">{group.label}</span>
                             <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-700" title="Current Qty">{group.totalQty} in stock</span>
+                            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700" title="Unsold Value">{formatPHP(group.totalValue)}</span>
                             <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-stone-100 text-zinc-500" title="All-time Sold/Total">
                                 {group.totalSold} sold / {group.totalAdded} total
                             </span>
@@ -242,6 +244,7 @@ const Inventory = ({ products = [], loading = false }) => {
                             <th className="px-5 py-4">Supplier</th>
                             <th className="px-5 py-4">Type</th>
                             <th className="px-5 py-4 text-right">Price</th>
+                            <th className="px-5 py-4 text-right">Total Value</th>
                             <th className="px-5 py-4 text-right">Status / Tracking</th>
                         </tr>
                     </thead>
@@ -249,7 +252,7 @@ const Inventory = ({ products = [], loading = false }) => {
                         {loading ? (
                             Array.from({ length: 6 }).map((_, i) => (
                                 <tr key={i} className="animate-pulse">
-                                    {Array.from({ length: 9 }).map((_, j) => (
+                                    {Array.from({ length: 10 }).map((_, j) => (
                                         <td key={j} className="px-5 py-4">
                                             <div className="h-4 bg-stone-200 rounded w-3/4" />
                                         </td>
@@ -282,6 +285,9 @@ const Inventory = ({ products = [], loading = false }) => {
                                     <td className="px-5 py-4 text-right font-bold text-emerald-700 whitespace-nowrap">
                                         {formatPHP(row.sellingPrice)}
                                     </td>
+                                    <td className="px-5 py-4 text-right font-black text-emerald-800 whitespace-nowrap">
+                                        {formatPHP((row.sellingPrice || 0) * (row.quantity || 0))}
+                                    </td>
                                     <td className="px-5 py-4 text-right">
                                         <div className="flex flex-col items-end gap-1.5">
                                             <span className={`text-base font-black leading-none flex items-center gap-2 ${row.isOutOfStock ? 'text-red-600' : row.isLowStock ? 'text-amber-600' : 'text-zinc-900'}`}>
@@ -304,7 +310,7 @@ const Inventory = ({ products = [], loading = false }) => {
                             ))
                         ) : (
                             <tr>
-                                <td colSpan="9" className="px-6 py-12 text-center text-zinc-500 border-dashed border-t">
+                                <td colSpan="10" className="px-6 py-12 text-center text-zinc-500 border-dashed border-t">
                                     No products match the current filter.
                                 </td>
                             </tr>
