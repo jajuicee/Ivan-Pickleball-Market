@@ -34,8 +34,8 @@ const Reporting = () => {
         }
 
         Promise.all([
-            axios.get(`http://${window.location.hostname}:8080/api/reporting/financials`, { params }),
-            axios.get(`http://${window.location.hostname}:8080/api/reporting/inventory-ledger`, { params })
+            axios.get(`/api/reporting/financials`, { params }),
+            axios.get(`/api/reporting/inventory-ledger`, { params })
         ])
             .then(([finRes, ledRes]) => {
                 setFinancials(finRes.data);

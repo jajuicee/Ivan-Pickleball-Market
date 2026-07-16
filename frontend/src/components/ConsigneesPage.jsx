@@ -5,7 +5,7 @@ import {
     AlertCircle, X, Undo2, ChevronDown, Trash2
 } from 'lucide-react';
 
-const BASE = `http://${window.location.hostname}:8080`;
+const BASE = '';
 
 const fmt = (n) => Number(n || 0).toLocaleString('en-PH', { style: 'currency', currency: 'PHP' });
 

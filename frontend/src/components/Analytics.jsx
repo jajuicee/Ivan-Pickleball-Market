@@ -248,11 +248,11 @@ const Analytics = () => {
         setError('');
         const bounds = getDateBounds();
         const txUrl = bounds
-            ? `http://${window.location.hostname}:8080/api/transactions?from=${bounds.from}&to=${bounds.to}&limit=10000`
-            : `http://${window.location.hostname}:8080/api/transactions?limit=10000`;
+            ? `/api/transactions?from=${bounds.from}&to=${bounds.to}&limit=10000`
+            : `/api/transactions?limit=10000`;
         const plUrl = bounds
-            ? `http://${window.location.hostname}:8080/api/payment-logs?from=${bounds.from}&to=${bounds.to}`
-            : `http://${window.location.hostname}:8080/api/payment-logs`;
+            ? `/api/payment-logs?from=${bounds.from}&to=${bounds.to}`
+            : `/api/payment-logs`;
         Promise.all([
             axios.get(txUrl),
             axios.get(plUrl)

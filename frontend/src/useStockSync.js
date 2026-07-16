@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { WS_BASE } from './apiConfig';
 
-const WS_URL = `ws://${window.location.hostname}:8080/ws/stock`;
+const WS_URL = `${WS_BASE}/ws/stock`;
 const RECONNECT_DELAY_MS = 3000; // wait 3s before retrying after disconnect
 
 /**

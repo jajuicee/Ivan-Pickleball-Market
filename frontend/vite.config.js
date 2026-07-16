@@ -6,5 +6,18 @@ export default defineConfig({
   plugins: [react()],
   server: {
     host: true, // Listen on all local IPs
+    proxy: {
+      // Forward API calls to Spring Boot backend
+      '/api': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+      },
+      // Forward WebSocket connections to Spring Boot backend
+      '/ws': {
+        target: 'ws://localhost:8080',
+        ws: true,
+      },
+    },
   }
 })
+

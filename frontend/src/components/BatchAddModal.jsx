@@ -107,7 +107,7 @@ const BatchAddModal = ({ products = [], suppliers = [], onClose, onSuccess }) =>
         };
 
         try {
-            await axios.post(`http://${window.location.hostname}:8080/api/batch-actions/receive`, payload);
+            await axios.post(`/api/batch-actions/receive`, payload);
             if (onSuccess) onSuccess();
         } catch (err) {
             setStatus({ type: 'error', message: err.response?.data?.error || 'Failed to process batch.' });

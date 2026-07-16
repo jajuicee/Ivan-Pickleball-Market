@@ -8,7 +8,7 @@ import {
 import BatchAddModal from './BatchAddModal';
 import PasswordModal from './PasswordModal';
 
-const BASE = `http://${window.location.hostname}:8080`;
+const BASE = '';
 const DEFAULT_LOW_STOCK_THRESHOLD = 5;
 
 const formatPHP = (n) =>

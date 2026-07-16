@@ -443,7 +443,7 @@ const OrderHistory = () => {
 
     // Build fetch URL from a preset id or custom range
     const buildFetchUrl = (preset, custom) => {
-        const base = `http://${window.location.hostname}:8080/api/transactions`;
+        const base = `/api/transactions`;
         const now = new Date();
         // Convert to local time string matching LocalDateTime (YYYY-MM-DDTHH:mm:ss)
         const fmt = (d) => {
@@ -493,8 +493,8 @@ const OrderHistory = () => {
         const plFrom = urlObj.searchParams.get('from');
         const plTo   = urlObj.searchParams.get('to');
         const plUrl  = plFrom && plTo
-            ? `http://${window.location.hostname}:8080/api/payment-logs?from=${plFrom}&to=${plTo}`
-            : `http://${window.location.hostname}:8080/api/payment-logs`;
+            ? `/api/payment-logs?from=${plFrom}&to=${plTo}`
+            : `/api/payment-logs`;
 
         Promise.all([
             axios.get(url),
@@ -515,7 +515,7 @@ const OrderHistory = () => {
         setCompleting(item.id);
         setTransactions(prev => prev.map(t => t.id === item.id ? { ...t, status: 'FULL' } : t));
         try {
-            await axios.patch(`http://${window.location.hostname}:8080/api/transactions/${item.id}/complete`);
+            await axios.patch(`/api/transactions/${item.id}/complete`);
             fetchTransactions();
         } catch {
             setTransactions(prev => prev.map(t => t.id === item.id ? { ...t, status: item.status } : t));
@@ -536,7 +536,7 @@ const OrderHistory = () => {
         setPayingBalanceGroup(null);
         setCompleting(group.orderId);
         try {
-            await axios.patch(`http://${window.location.hostname}:8080/api/transactions/group/${group.orderId}/pay-partial`, { amount });
+            await axios.patch(`/api/transactions/group/${group.orderId}/pay-partial`, { amount });
             fetchTransactions();
             showToast(`Applied ₱${amount.toFixed(2)} to Order #${group.displayId}.`, 'success');
         } catch {
@@ -552,7 +552,7 @@ const OrderHistory = () => {
         const unfinished = group.items.filter(i => i.status !== 'FULL');
         setTransactions(prev => prev.map(t => unfinished.find(u => u.id === t.id) ? { ...t, status: 'FULL' } : t));
         try {
-            await axios.patch(`http://${window.location.hostname}:8080/api/transactions/group/${group.orderId}/complete`);
+            await axios.patch(`/api/transactions/group/${group.orderId}/complete`);
             fetchTransactions();
             showToast(`Order #${group.displayId} fully paid.`, 'success');
         } catch {
@@ -583,7 +583,7 @@ const OrderHistory = () => {
         setConfirmModal(null);
         setCancelling(group.orderId);
         try {
-            await axios.post(`http://${window.location.hostname}:8080/api/transactions/cancel/${group.orderId}`);
+            await axios.post(`/api/transactions/cancel/${group.orderId}`);
             fetchTransactions();
             // Fix #11: show success toast
             showToast(`Order #${group.displayId} deleted and stock restored.`, 'success');
@@ -604,7 +604,7 @@ const OrderHistory = () => {
             })
         );
         try {
-            await axios.patch(`http://${window.location.hostname}:8080/api/transactions/group/${group.orderId}/payment`, { paymentMethod: newMethod, updateLogs });
+            await axios.patch(`/api/transactions/group/${group.orderId}/payment`, { paymentMethod: newMethod, updateLogs });
             fetchTransactions();
         } catch {
             setError('Could not update payment method.');

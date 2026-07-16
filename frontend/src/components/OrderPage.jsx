@@ -44,7 +44,7 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
 
     const fetchConsignees = async () => {
         try {
-            const res = await axios.get(`http://${window.location.hostname}:8080/api/consignees`);
+            const res = await axios.get(`/api/consignees`);
             setConsignees(res.data);
         } catch {
             console.error('Failed to fetch consignees');
@@ -60,7 +60,7 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
     const handleAddConsignee = async () => {
         if (!newConsigneeName.trim()) return;
         try {
-            const res = await axios.post(`http://${window.location.hostname}:8080/api/consignees`, { name: newConsigneeName });
+            const res = await axios.post(`/api/consignees`, { name: newConsigneeName });
             setConsignees([...consignees, res.data]);
             setSelectedConsigneeId(res.data.id.toString());
             setShowAddConsignee(false);
@@ -207,7 +207,7 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
             const failedItems = [];
             for (const p of payloads) {
                 try {
-                    await axios.post(`http://${window.location.hostname}:8080/api/transactions`, p);
+                    await axios.post(`/api/transactions`, p);
                 } catch (err) {
                     failedItems.push(err.response?.data?.error || 'Unknown error');
                 }

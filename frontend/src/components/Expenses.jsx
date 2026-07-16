@@ -295,9 +295,9 @@ const Expenses = () => {
     const fetchData = () => {
         setLoading(true); setError('');
         Promise.all([
-            axios.get(`http://${window.location.hostname}:8080/api/expenses`),
-            axios.get(`http://${window.location.hostname}:8080/api/reporting/income-summary`),
-            axios.get(`http://${window.location.hostname}:8080/api/batch-actions/history`)
+            axios.get(`/api/expenses`),
+            axios.get(`/api/reporting/income-summary`),
+            axios.get(`/api/batch-actions/history`)
         ]).then(([resExp, resIncome, resBatches]) => {
             setExpenses(Array.isArray(resExp.data) ? resExp.data : []);
             setIncomeSummary(resIncome.data || { totalIncome: 0, paymentBreakdown: {} });
@@ -310,13 +310,13 @@ const Expenses = () => {
     useEffect(() => { fetchData(); }, []);
 
     const handleAdd = async (data) => {
-        const res = await axios.post(`http://${window.location.hostname}:8080/api/expenses`, data);
+        const res = await axios.post(`/api/expenses`, data);
         setExpenses(prev => [res.data, ...prev]);
     };
 
     const handleUpdateNote = async (id) => {
         try {
-            const res = await axios.put(`http://${window.location.hostname}:8080/api/expenses/${id}`, { note: editNote });
+            const res = await axios.put(`/api/expenses/${id}`, { note: editNote });
             setExpenses(prev => prev.map(e => e.id === id ? res.data : e));
             setEditing(null);
         } catch {
@@ -334,12 +334,12 @@ const Expenses = () => {
         try {
             if (hasBatch) {
                 // Revert the full batch (this deletes the expense + stock batches)
-                await axios.delete(`http://${window.location.hostname}:8080/api/batch-actions/revert/${exp.batchId}`);
+                await axios.delete(`/api/batch-actions/revert/${exp.batchId}`);
                 // Remove all expenses that share this batchId
                 setExpenses(prev => prev.filter(e => e.batchId !== exp.batchId));
                 setBatches(prev => prev.filter(b => b.batchId !== exp.batchId));
             } else {
-                await axios.delete(`http://${window.location.hostname}:8080/api/expenses/${exp.id}`);
+                await axios.delete(`/api/expenses/${exp.id}`);
                 setExpenses(prev => prev.filter(e => e.id !== exp.id));
             }
         } catch {

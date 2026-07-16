@@ -30,7 +30,62 @@
 - **Credit Card** has been integrated natively into checkout forms and filter lists, alongside GCash, Cash, BDO, etc.
 - `OrderHistory.jsx` groups individual `Transaction` rows by their `transactionId` (UUID) to display them as a single unified receipt. Legacy orders that didn't have UUIDs are grouped by `LEGACY-{id}`.
 
-## 5. Development 
-- Start the frontend with `npm run dev`.
-- Start the backend with `mvnw spring-boot:run` (Requires Java 17+). 
-- Database is hosted on Supabase PostgreSQL (Transaction Mode on port 6543, with `prepareThreshold=0` set in `application.properties` to prevent prepared statement limits).
+## 5. Running the App
+
+### Production Mode (Multi-Device — Recommended)
+In production, **everything runs from one machine on one port (8080)**. The built frontend is bundled inside Spring Boot's static resources, so there is no separate frontend server.
+
+1. **Build the frontend** (only needed after frontend code changes):
+   ```
+   cd frontend
+   npm run build
+   ```
+   Or just double-click `deploy.bat` in the project root — it builds and copies automatically.
+
+2. **Start the backend** on your host machine:
+   ```
+   cd backend
+   mvnw spring-boot:run
+   ```
+   Requires Java 17+.
+
+3. **Connect from any device** on the same WiFi/LAN:
+   ```
+   http://<host-machine-ip>:8080
+   ```
+   Example: `http://192.168.254.109:8080`
+
+All devices (phones, tablets, laptops) connect to the same URL. The backend serves both the website and the API. WebSocket real-time sync works across all connected devices.
+
+> **Windows Firewall:** If other devices can't connect, make sure port 8080 is allowed through Windows Firewall. Search "Windows Defender Firewall" → "Allow an app" → add Java or allow port 8080.
+
+### Development Mode (Single Developer)
+For local development with hot-reload:
+
+1. Start the **backend**:
+   ```
+   cd backend
+   mvnw spring-boot:run
+   ```
+2. Start the **frontend** dev server:
+   ```
+   cd frontend
+   npm run dev
+   ```
+3. Open `http://localhost:5173` in your browser.
+
+Vite's proxy (`vite.config.js`) automatically forwards `/api/*` and `/ws/*` requests to the backend on port 8080 — no CORS issues.
+
+### Redeploying After Frontend Changes
+After editing any frontend code (JSX, CSS, etc.), run `deploy.bat` or manually:
+```
+cd frontend
+npm run build
+xcopy /e /i /q dist ..\backend\src\main\resources\static
+```
+Then restart Spring Boot.
+
+### Database
+- Hosted on **Supabase PostgreSQL** (Transaction Mode on port 6543, with `prepareThreshold=0` in `application.properties` to prevent prepared statement limits).
+- Connection pool is set to 5 (Supabase Free Tier limit) via HikariCP in `application.properties`.
+

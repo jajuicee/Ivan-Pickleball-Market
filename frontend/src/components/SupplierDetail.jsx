@@ -5,7 +5,7 @@ import {
     TrendingUp, CalendarClock, Pencil, Loader2, ShoppingBag
 } from 'lucide-react';
 
-const API = `http://${window.location.hostname}:8080/api/suppliers`;
+const API = `/api/suppliers`;
 
 const formatPHP = (n) =>
     new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', minimumFractionDigits: 2 }).format(Number(n) || 0);

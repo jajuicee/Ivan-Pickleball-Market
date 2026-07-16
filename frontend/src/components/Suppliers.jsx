@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import SupplierDetail from './SupplierDetail';
 
-const API = `http://${window.location.hostname}:8080/api/suppliers`;
+const API = `/api/suppliers`;
 
 const getStartOfMonth = (d) => new Date(d.getFullYear(), d.getMonth(), 1);
 const getEndOfMonth = (d) => new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59);

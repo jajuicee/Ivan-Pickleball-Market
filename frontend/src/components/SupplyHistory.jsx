@@ -12,7 +12,7 @@ import {
     Receipt
 } from 'lucide-react';
 
-const BASE = `http://${window.location.hostname}:8080`;
+const BASE = '';
 
 const SupplyHistory = () => {
     const [batches, setBatches] = useState([]);

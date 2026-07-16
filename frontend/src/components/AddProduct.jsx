@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Target, Box, X, Plus, Save, AlertCircle, CheckCircle, Building2, Footprints, Trash2 } from 'lucide-react';
 
-const BASE = `http://${window.location.hostname}:8080`;
+const BASE = '';
 
 // ── Common field style ──────────────────────────────────────────────────────
 const inp = 'w-full px-3 py-2 border border-stone-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-zinc-900';
