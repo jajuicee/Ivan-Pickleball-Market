@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import axios from 'axios';
 import { Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useStockSync } from '../useStockSync';
@@ -19,17 +19,17 @@ import {
 } from 'lucide-react';
 
 // Main Page Components
-import OrderPage from './OrderPage';
-import OrderHistory from './OrderHistory';
-import AddProduct from './AddProduct';
-import Inventory from './Inventory';
-import ManageInventory from './ManageInventory';
-import Suppliers from './Suppliers';
-import Supplies from './Supplies';
-import Analytics from './Analytics';
-import Expenses from './Expenses';
-import ProductSales from './ProductSales';
-import ConsigneesPage from './ConsigneesPage';
+const OrderPage = lazy(() => import('./OrderPage'));
+const OrderHistory = lazy(() => import('./OrderHistory'));
+const AddProduct = lazy(() => import('./AddProduct'));
+const Inventory = lazy(() => import('./Inventory'));
+const ManageInventory = lazy(() => import('./ManageInventory'));
+const Suppliers = lazy(() => import('./Suppliers'));
+const Supplies = lazy(() => import('./Supplies'));
+const Analytics = lazy(() => import('./Analytics'));
+const Expenses = lazy(() => import('./Expenses'));
+const ProductSales = lazy(() => import('./ProductSales'));
+const ConsigneesPage = lazy(() => import('./ConsigneesPage'));
 
 const TabletLayout = () => {
     const location = useLocation();
@@ -134,19 +134,21 @@ const TabletLayout = () => {
                     className="h-full w-full overflow-y-auto overflow-x-hidden p-4 sm:p-6"
                     style={{ animation: 'pageSlideIn 300ms ease-out both' }}
                 >
-                    <Routes>
-                        <Route path="orders"           element={<OrderPage products={products} loading={loadingProducts} refetchProducts={fetchProducts} />} />
-                        <Route path="history"          element={<OrderHistory />} />
-                        <Route path="consignees"       element={<ConsigneesPage />} />
-                        <Route path="add-product"      element={<AddProduct onProductAdded={fetchProducts} />} />
-                        <Route path="inventory"        element={<Inventory products={products} loading={loadingProducts} refetchProducts={fetchProducts} />} />
-                        <Route path="manage-inventory" element={<ManageInventory products={products} loading={loadingProducts} refetchProducts={fetchProducts} />} />
-                        <Route path="supplies"         element={<Supplies />} />
-                        <Route path="suppliers"        element={<Suppliers />} />
-                        <Route path="product-sales"    element={<ProductSales products={products} />} />
-                        <Route path="analytics"        element={<Analytics />} />
-                        <Route path="expenses"         element={<Expenses />} />
-                    </Routes>
+                    <Suspense fallback={<div className="h-full w-full flex justify-center items-center p-12"><Loader2 className="w-8 h-8 animate-spin text-zinc-400" /></div>}>
+                        <Routes>
+                            <Route path="orders"           element={<OrderPage products={products} loading={loadingProducts} refetchProducts={fetchProducts} />} />
+                            <Route path="history"          element={<OrderHistory />} />
+                            <Route path="consignees"       element={<ConsigneesPage />} />
+                            <Route path="add-product"      element={<AddProduct onProductAdded={fetchProducts} />} />
+                            <Route path="inventory"        element={<Inventory products={products} loading={loadingProducts} refetchProducts={fetchProducts} />} />
+                            <Route path="manage-inventory" element={<ManageInventory products={products} loading={loadingProducts} refetchProducts={fetchProducts} />} />
+                            <Route path="supplies"         element={<Supplies />} />
+                            <Route path="suppliers"        element={<Suppliers />} />
+                            <Route path="product-sales"    element={<ProductSales products={products} />} />
+                            <Route path="analytics"        element={<Analytics />} />
+                            <Route path="expenses"         element={<Expenses />} />
+                        </Routes>
+                    </Suspense>
                 </div>
             </main>
 

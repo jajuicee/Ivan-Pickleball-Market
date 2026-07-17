@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import axios from 'axios';
 import { Routes, Route, Link, useLocation, Navigate, useNavigate } from 'react-router-dom';
 import { useStockSync } from '../useStockSync';
@@ -21,19 +21,19 @@ import {
 } from 'lucide-react';
 
 // Main Page Components
-import Inventory from './Inventory';
-import AddProduct from './AddProduct';
-import OrderPage from './OrderPage';
-import OrderHistory from './OrderHistory';
-import Analytics from './Analytics';
-import Expenses from './Expenses';
-import ManageInventory from './ManageInventory';
-import Supplies from './Supplies';
-import Suppliers from './Suppliers';
-import ProductSales from './ProductSales';
-import ConsigneesPage from './ConsigneesPage';
-import Reporting from './Reporting';
-import PasswordModal from './PasswordModal';
+const Inventory = lazy(() => import('./Inventory'));
+const AddProduct = lazy(() => import('./AddProduct'));
+const OrderPage = lazy(() => import('./OrderPage'));
+const OrderHistory = lazy(() => import('./OrderHistory'));
+const Analytics = lazy(() => import('./Analytics'));
+const Expenses = lazy(() => import('./Expenses'));
+const ManageInventory = lazy(() => import('./ManageInventory'));
+const Supplies = lazy(() => import('./Supplies'));
+const Suppliers = lazy(() => import('./Suppliers'));
+const ProductSales = lazy(() => import('./ProductSales'));
+const ConsigneesPage = lazy(() => import('./ConsigneesPage'));
+const Reporting = lazy(() => import('./Reporting'));
+const PasswordModal = lazy(() => import('./PasswordModal'));
 
 const Dashboard = () => {
     const location = useLocation();
@@ -173,30 +173,32 @@ const Dashboard = () => {
                         className="h-full flex flex-col p-8 pb-12 w-full mx-auto min-h-0"
                         style={{ animation: 'pageSlideIn 380ms cubic-bezier(0.16, 1, 0.3, 1) both' }}
                     >
-                        <Routes>
-                            <Route path="/" element={<Navigate to="/orders" replace />} />
-                            <Route path="/orders" element={<OrderPage products={products} loading={loadingProducts} refetchProducts={fetchProducts} />} />
-                            <Route path="/add-product" element={<AddProduct onProductAdded={fetchProducts} />} />
-                            <Route path="/inventory" element={
-                                unlockedPath === '/inventory' ? <Inventory products={products} loading={loadingProducts} refetchProducts={fetchProducts} /> 
-                                : <PasswordModal title="Inventory Access" onConfirm={() => setUnlockedPath('/inventory')} onCancel={() => navigate('/orders')} />
-                            } />
-                            <Route path="/manage-inventory" element={
-                                unlockedPath === '/manage-inventory' ? <ManageInventory products={products} loading={loadingProducts} refetchProducts={fetchProducts} />
-                                : <PasswordModal title="Manage Inventory Access" onConfirm={() => setUnlockedPath('/manage-inventory')} onCancel={() => navigate('/orders')} />
-                            } />
-                            <Route path="/supplies" element={<Supplies />} />
-                            <Route path="/suppliers" element={<Suppliers />} />
-                            <Route path="/product-sales" element={<ProductSales products={products} />} />
-                            <Route path="/history" element={<OrderHistory />} />
-                            <Route path="/consignees" element={<ConsigneesPage />} />
-                            <Route path="/reporting" element={
-                                unlockedPath === '/reporting' ? <Reporting />
-                                : <PasswordModal title="Reporting Access" onConfirm={() => setUnlockedPath('/reporting')} onCancel={() => navigate('/orders')} />
-                            } />
-                            <Route path="/analytics" element={<Analytics />} />
-                            <Route path="/expenses" element={<Expenses />} />
-                        </Routes>
+                        <Suspense fallback={<div className="h-full w-full flex justify-center items-center p-12"><Loader2 className="w-8 h-8 animate-spin text-zinc-400" /></div>}>
+                            <Routes>
+                                <Route path="/" element={<Navigate to="/orders" replace />} />
+                                <Route path="/orders" element={<OrderPage products={products} loading={loadingProducts} refetchProducts={fetchProducts} />} />
+                                <Route path="/add-product" element={<AddProduct onProductAdded={fetchProducts} />} />
+                                <Route path="/inventory" element={
+                                    unlockedPath === '/inventory' ? <Inventory products={products} loading={loadingProducts} refetchProducts={fetchProducts} /> 
+                                    : <PasswordModal title="Inventory Access" onConfirm={() => setUnlockedPath('/inventory')} onCancel={() => navigate('/orders')} />
+                                } />
+                                <Route path="/manage-inventory" element={
+                                    unlockedPath === '/manage-inventory' ? <ManageInventory products={products} loading={loadingProducts} refetchProducts={fetchProducts} />
+                                    : <PasswordModal title="Manage Inventory Access" onConfirm={() => setUnlockedPath('/manage-inventory')} onCancel={() => navigate('/orders')} />
+                                } />
+                                <Route path="/supplies" element={<Supplies />} />
+                                <Route path="/suppliers" element={<Suppliers />} />
+                                <Route path="/product-sales" element={<ProductSales products={products} />} />
+                                <Route path="/history" element={<OrderHistory />} />
+                                <Route path="/consignees" element={<ConsigneesPage />} />
+                                <Route path="/reporting" element={
+                                    unlockedPath === '/reporting' ? <Reporting />
+                                    : <PasswordModal title="Reporting Access" onConfirm={() => setUnlockedPath('/reporting')} onCancel={() => navigate('/orders')} />
+                                } />
+                                <Route path="/analytics" element={<Analytics />} />
+                                <Route path="/expenses" element={<Expenses />} />
+                            </Routes>
+                        </Suspense>
                     </div>
                 </div>
             </main>
