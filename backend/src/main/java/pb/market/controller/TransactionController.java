@@ -464,6 +464,50 @@ public class TransactionController {
         return ResponseEntity.ok(Map.of("message", "Payment applied successfully."));
     }
 
+    // ── Update final price of a transaction item (e.g., discounted/sale on consignment) ──
+    @Transactional
+    @PatchMapping("/{id}/price")
+    public ResponseEntity<?> updatePrice(@PathVariable("id") Long id, @RequestBody Map<String, Object> body) {
+        Transaction tx = transactionRepository.findByIdWithDetails(id).orElse(null);
+        if (tx == null) {
+            return ResponseEntity.notFound().build();
+        }
+        if (!body.containsKey("price")) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Price is required."));
+        }
+
+        BigDecimal newPrice;
+        try {
+            newPrice = new BigDecimal(body.get("price").toString());
+            if (newPrice.compareTo(BigDecimal.ZERO) < 0) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Price cannot be negative."));
+            }
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Invalid price format."));
+        }
+
+        BigDecimal downpayment = tx.getDownpayment() != null ? tx.getDownpayment() : BigDecimal.ZERO;
+        if (newPrice.compareTo(downpayment) < 0) {
+            return ResponseEntity.badRequest().body(Map.of("error", "New price cannot be lower than the already received downpayment of " + downpayment));
+        }
+
+        tx.setFinalPrice(newPrice);
+
+        // Adjust status if needed based on the new price vs downpayment
+        if ("FULL".equalsIgnoreCase(tx.getStatus())) {
+            if (newPrice.compareTo(downpayment) > 0) {
+                tx.setStatus("PARTIAL");
+            }
+        } else {
+            if (newPrice.compareTo(downpayment) == 0 && downpayment.compareTo(BigDecimal.ZERO) > 0) {
+                tx.setStatus("FULL");
+            }
+        }
+
+        transactionRepository.save(tx);
+        return ResponseEntity.ok(Map.of("message", "Price updated successfully.", "transactionId", id, "newPrice", newPrice));
+    }
+
     // ── Return a single consignment item (restore stock, delete transaction row) ─
     @Transactional
     @DeleteMapping("/{id}/return")
