@@ -195,7 +195,10 @@ const Dashboard = () => {
                                     unlockedPath === '/reporting' ? <Reporting />
                                     : <PasswordModal title="Reporting Access" onConfirm={() => setUnlockedPath('/reporting')} onCancel={() => navigate('/orders')} />
                                 } />
-                                <Route path="/analytics" element={<Analytics />} />
+                                <Route path="/analytics" element={
+                                    unlockedPath === '/analytics' ? <Analytics />
+                                    : <PasswordModal title="Analytics Access" onConfirm={() => setUnlockedPath('/analytics')} onCancel={() => navigate('/orders')} />
+                                } />
                                 <Route path="/expenses" element={<Expenses />} />
                             </Routes>
                         </Suspense>

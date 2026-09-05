@@ -1,0 +1,25 @@
+# Dependencies and build outputs
+node_modules/
+frontend/node_modules/
+dist/
+frontend/dist/
+target/
+backend/target/
+.mvn/wrapper/maven-wrapper.jar
+
+# Logs and environment
+*.log
+*.local
+.env
+.env.*
+
+# Editor / IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Temporary / dump files
+tx_dump.json
+Paddles_Export.csv

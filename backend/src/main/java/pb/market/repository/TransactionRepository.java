@@ -67,4 +67,7 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
     boolean existsByVariantId(Long variantId);
 
     List<Transaction> findByStockBatchIn(List<pb.market.entity.StockBatch> batches);
+
+    @Query("SELECT t FROM Transaction t LEFT JOIN FETCH t.consignee WHERE t.stockBatch IN :batches ORDER BY t.transactionDate ASC")
+    List<Transaction> findByStockBatchInWithConsignee(@Param("batches") List<pb.market.entity.StockBatch> batches);
 }

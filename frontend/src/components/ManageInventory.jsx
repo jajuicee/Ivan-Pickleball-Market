@@ -40,6 +40,9 @@ const ManageInventory = ({ products = [], loading = false, refetchProducts }) =>
     const [batches, setBatches] = useState([]);
     const [adjustments, setAdjustments] = useState([]);
     const [batchLoading, setBatchLoading] = useState(false);
+    // batchSales: { [batchDbId]: [ { transactionId, type, status, consigneeName, customerName, date } ] }
+    const [batchSales, setBatchSales] = useState({});
+    const [expandedBatches, setExpandedBatches] = useState({});
 
     // --- EDIT VARIANT MODAL STATE ---
     const [editModal, setEditModal] = useState(null); // { row }
@@ -461,19 +464,27 @@ const ManageInventory = ({ products = [], loading = false, refetchProducts }) =>
         setBatchModal({ variantId: row.variantId, name: row.dropdownName });
         setBatches([]);
         setAdjustments([]);
+        setBatchSales({});
+        setExpandedBatches({});
         setBatchLoading(true);
         try {
-            const [batchRes, adjRes] = await Promise.all([
+            const [batchRes, adjRes, salesRes] = await Promise.all([
                 axios.get(`${BASE}/api/stock-batches/variant/${row.variantId}`),
                 axios.get(`${BASE}/api/products/variants/${row.variantId}/adjustments`),
+                axios.get(`${BASE}/api/stock-batches/variant/${row.variantId}/sales`),
             ]);
             setBatches(batchRes.data);
             setAdjustments(adjRes.data);
+            setBatchSales(salesRes.data || {});
         } catch (err) {
             console.error('Failed to load batches/adjustments', err);
         } finally {
             setBatchLoading(false);
         }
+    };
+
+    const toggleBatchExpand = (batchDbId) => {
+        setExpandedBatches(prev => ({ ...prev, [batchDbId]: !prev[batchDbId] }));
     };
 
     const fmtDate = (dt) => dt ? new Date(dt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
@@ -997,49 +1008,125 @@ const ManageInventory = ({ products = [], loading = false, refetchProducts }) =>
                                                     <th className="px-5 py-3 text-right">Cost</th>
                                                     <th className="px-5 py-3">Supplier</th>
                                                     <th className="px-5 py-3">Type</th>
+                                                    <th className="px-5 py-3">Units</th>
                                                     <th className="px-5 py-3"></th>
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-stone-100">
-                                                {batches.map((b, i) => (
-                                                    <tr key={b.id} className={`${b.remainingQuantity <= 0 ? 'opacity-40' : 'hover:bg-stone-50'} transition-colors`}>
-                                                        <td className="px-5 py-3 text-zinc-500">
-                                                            {fmtDate(b.restockedAt)}
-                                                            {i === 0 && b.remainingQuantity > 0 && (
-                                                                <span className="ml-2 text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">NEXT SELL</span>
+                                                {batches.map((b, i) => {
+                                                    const sales = batchSales[String(b.id)] || [];
+                                                    const soldCount = (b.quantity || 0) - (b.remainingQuantity || 0);
+                                                    const inStockCount = b.remainingQuantity || 0;
+                                                    const isExpanded = !!expandedBatches[b.id];
+                                                    const totalUnits = b.quantity || 0;
+                                                    return (
+                                                        <>
+                                                            <tr key={b.id} className={`${b.remainingQuantity <= 0 ? 'opacity-50' : 'hover:bg-stone-50'} transition-colors`}>
+                                                                <td className="px-5 py-3 text-zinc-500">
+                                                                    <div className="font-bold text-zinc-700 text-xs">Batch #{i + 1}</div>
+                                                                    <div className="text-zinc-400 text-xs">{fmtDate(b.restockedAt)}</div>
+                                                                    {i === 0 && b.remainingQuantity > 0 && (
+                                                                        <span className="mt-0.5 inline-block text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">NEXT SELL</span>
+                                                                    )}
+                                                                </td>
+                                                                <td className="px-5 py-3 text-center font-bold text-zinc-800">{b.quantity}</td>
+                                                                <td className="px-5 py-3 text-center">
+                                                                    <span className={`font-bold px-2 py-0.5 rounded text-xs ${b.remainingQuantity > 0 ? 'bg-green-100 text-green-700' : 'bg-stone-100 text-stone-400'}`}>
+                                                                        {b.remainingQuantity}
+                                                                    </span>
+                                                                </td>
+                                                                <td className="px-5 py-3 text-right font-medium text-zinc-700">{fmtPrice(b.acquisitionPrice)}</td>
+                                                                <td className="px-5 py-3">
+                                                                    {b.supplier ? (
+                                                                        <span className="flex items-center gap-1 text-indigo-700 text-xs font-bold">
+                                                                            <Building2 size={11} /> {b.supplier.name}
+                                                                        </span>
+                                                                    ) : <span className="text-zinc-300 text-xs">—</span>}
+                                                                </td>
+                                                                <td className="px-5 py-3">
+                                                                    {b.consigned
+                                                                        ? <span className="bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full text-xs font-bold">Consigned</span>
+                                                                        : <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded-full text-xs font-bold">Owned</span>
+                                                                    }
+                                                                </td>
+                                                                <td className="px-5 py-3">
+                                                                    {totalUnits > 0 && (
+                                                                        <button
+                                                                            onClick={() => toggleBatchExpand(b.id)}
+                                                                            className="flex items-center gap-1 text-xs font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-2 py-1 rounded-lg transition-colors whitespace-nowrap"
+                                                                        >
+                                                                            <Layers size={11} />
+                                                                            {soldCount > 0 ? `${soldCount} sold` : ''}
+                                                                            {soldCount > 0 && inStockCount > 0 ? ' · ' : ''}
+                                                                            {inStockCount > 0 ? `${inStockCount} in stock` : ''}
+                                                                            <span className="ml-0.5">{isExpanded ? '▲' : '▼'}</span>
+                                                                        </button>
+                                                                    )}
+                                                                </td>
+                                                                <td className="px-5 py-3 text-right">
+                                                                    {b.batchId && (
+                                                                        <button onClick={() => handleRevertBatch(b.batchId)}
+                                                                            className="text-zinc-400 hover:text-red-500 transition-colors p-1"
+                                                                            title="Revert Batch Addition">
+                                                                            <Trash2 size={16} />
+                                                                        </button>
+                                                                    )}
+                                                                </td>
+                                                            </tr>
+                                                            {/* Per-unit status rows — shown when expanded */}
+                                                            {isExpanded && (
+                                                                <tr key={`${b.id}-units`}>
+                                                                    <td colSpan={8} className="px-0 py-0 bg-slate-50 border-b border-slate-200">
+                                                                        <div className="px-6 py-3 space-y-1.5">
+                                                                            <div className="text-[10px] font-black uppercase tracking-widest text-zinc-400 mb-2">Batch #{i + 1} — Unit Breakdown</div>
+                                                                            {/* Sold units */}
+                                                                            {sales.map((sale, unitIdx) => {
+                                                                                const isConsignment = sale.type === 'CONSIGNMENT';
+                                                                                const isPaid = sale.status === 'FULL';
+                                                                                const isPartial = sale.status === 'PARTIAL';
+                                                                                const isUnpaid = sale.status === 'UNPAID';
+                                                                                // Short order ID for display
+                                                                                const shortId = sale.transactionId?.startsWith('LEGACY-')
+                                                                                    ? sale.transactionId
+                                                                                    : sale.transactionId?.slice(0, 8).toUpperCase();
+                                                                                return (
+                                                                                    <div key={sale.internalId} className="flex items-center gap-2 text-xs bg-white border border-stone-200 rounded-lg px-3 py-2">
+                                                                                        <span className="text-zinc-400 font-mono w-14 shrink-0">Unit {unitIdx + 1}</span>
+                                                                                        <span className="text-emerald-600 font-black text-[11px]">✓ SOLD</span>
+                                                                                        <span className="text-zinc-300">·</span>
+                                                                                        {isConsignment ? (
+                                                                                            <span className="text-purple-700 font-bold">
+                                                                                                Consignee: <span className="text-purple-900">{sale.consigneeName || '—'}</span>
+                                                                                            </span>
+                                                                                        ) : (
+                                                                                            <span className="text-zinc-700 font-bold">
+                                                                                                Order <span className="font-mono text-indigo-700">#{shortId}</span>
+                                                                                                {sale.customerName && <span className="text-zinc-400 font-normal"> · {sale.customerName}</span>}
+                                                                                            </span>
+                                                                                        )}
+                                                                                        <span className="text-zinc-300">·</span>
+                                                                                        {isPaid && <span className="bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-black text-[10px] uppercase">Paid</span>}
+                                                                                        {isPartial && <span className="bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-black text-[10px] uppercase">Partial</span>}
+                                                                                        {isUnpaid && <span className="bg-red-100 text-red-600 px-1.5 py-0.5 rounded font-black text-[10px] uppercase">Unpaid</span>}
+                                                                                        <span className="ml-auto text-zinc-400 whitespace-nowrap">{fmtDate(sale.date)}</span>
+                                                                                    </div>
+                                                                                );
+                                                                            })}
+                                                                            {/* In-stock units */}
+                                                                            {Array.from({ length: inStockCount }).map((_, j) => (
+                                                                                <div key={`stock-${j}`} className="flex items-center gap-2 text-xs bg-white border border-stone-200 rounded-lg px-3 py-2">
+                                                                                    <span className="text-zinc-400 font-mono w-14 shrink-0">Unit {sales.length + j + 1}</span>
+                                                                                    <span className="text-blue-500 font-black text-[11px]">📦 IN STOCK</span>
+                                                                                    <span className="text-zinc-300 ml-auto text-[10px]">Available</span>
+                                                                                </div>
+                                                                            ))}
+                                                                        </div>
+                                                                    </td>
+                                                                </tr>
                                                             )}
-                                                        </td>
-                                                        <td className="px-5 py-3 text-center font-bold text-zinc-800">{b.quantity}</td>
-                                                        <td className="px-5 py-3 text-center">
-                                                            <span className={`font-bold px-2 py-0.5 rounded text-xs ${b.remainingQuantity > 0 ? 'bg-green-100 text-green-700' : 'bg-stone-100 text-stone-400'}`}>
-                                                                {b.remainingQuantity}
-                                                            </span>
-                                                        </td>
-                                                        <td className="px-5 py-3 text-right font-medium text-zinc-700">{fmtPrice(b.acquisitionPrice)}</td>
-                                                        <td className="px-5 py-3">
-                                                            {b.supplier ? (
-                                                                <span className="flex items-center gap-1 text-indigo-700 text-xs font-bold">
-                                                                    <Building2 size={11} /> {b.supplier.name}
-                                                                </span>
-                                                            ) : <span className="text-zinc-300 text-xs">—</span>}
-                                                        </td>
-                                                        <td className="px-5 py-3">
-                                                            {b.consigned
-                                                                ? <span className="bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full text-xs font-bold">Consigned</span>
-                                                                : <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded-full text-xs font-bold">Owned</span>
-                                                            }
-                                                        </td>
-                                                        <td className="px-5 py-3 text-right">
-                                                            {b.batchId && (
-                                                                <button onClick={() => handleRevertBatch(b.batchId)}
-                                                                    className="text-zinc-400 hover:text-red-500 transition-colors p-1"
-                                                                    title="Revert Batch Addition">
-                                                                    <Trash2 size={16} />
-                                                                </button>
-                                                            )}
-                                                        </td>
-                                                    </tr>
-                                                ))}
+                                                        </>
+                                                    );
+                                                })}
                                             </tbody>
                                         </table>
                                     )}

@@ -506,6 +506,7 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
                                 onChange={e => setFormData({ ...formData, paymentMethod: e.target.value })}
                                 className="w-full px-4 py-2 border rounded-lg bg-white outline-none focus:ring-2 focus:ring-zinc-950 mb-3">
                                 <option value="GCash">GCash</option>
+                                <option value="QRPH">QRPH</option>
                                 <option value="Banko">Banko</option>
                                 <option value="BDO">BDO</option>
                                 <option value="BPI">BPI</option>
@@ -530,6 +531,7 @@ const OrderPage = ({ products = [], loading = false, refetchProducts }) => {
                                                 }}
                                                 className="flex-1 px-3 py-2 text-sm border rounded bg-white outline-none focus:ring-2 focus:ring-zinc-950">
                                                 <option value="GCash">GCash</option>
+                                                <option value="QRPH">QRPH</option>
                                                 <option value="Banko">Banko</option>
                                                 <option value="BDO">BDO</option>
                                                 <option value="BPI">BPI</option>

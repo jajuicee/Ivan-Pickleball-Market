@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import {
     Users, UserPlus, CreditCard, CheckCircle2, Loader2,
-    AlertCircle, X, Undo2, ChevronDown, Trash2
+    AlertCircle, X, Undo2, ChevronDown, Trash2, Search, Tag
 } from 'lucide-react';
 
 const BASE = '';
@@ -25,15 +25,21 @@ const ConsigneesPage = () => {
     const [customAmount, setCustomAmount] = useState('');
     const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('GCash');
 
-    const PAYMENT_METHODS = ['GCash', 'Cash', 'Credit Card', 'BDO', 'BPI', 'Banko', 'Maya', 'Check', 'GoTyme'];
+    const PAYMENT_METHODS = ['GCash', 'QRPH', 'Cash', 'Credit Card', 'BDO', 'BPI', 'Banko', 'Maya', 'Check', 'GoTyme'];
 
     // Return states
     const [returningItem, setReturningItem] = useState(null); // id being returned
     const [returnConfirmItem, setReturnConfirmItem] = useState(null); // { item, group }
 
+    // Price Change states
+    const [priceEditItem, setPriceEditItem] = useState(null); // item being edited
+    const [newPriceInput, setNewPriceInput] = useState('');
+    const [savingPrice, setSavingPrice] = useState(false);
+
     const [toast, setToast] = useState(null);
     const [expandedGroups, setExpandedGroups] = useState(new Set());
     const [consigneeSort, setConsigneeSort] = useState('DATE_DESC'); // 'DATE_DESC' | 'DATE_ASC' | 'NAME'
+    const [itemSearch, setItemSearch] = useState('');
 
     const showToast = (message, type = 'success') => {
         setToast({ message, type });
@@ -130,6 +136,48 @@ const ConsigneesPage = () => {
             return consigneeSort === 'DATE_DESC' ? db - da : da - db;
         });
     }, [consignees, transactions, consigneeSort]);
+
+    // ── Global item search across ALL consignees ────────────────────────────────────
+    const searchResults = useMemo(() => {
+        const q = itemSearch.trim().toLowerCase();
+        if (!q) return [];
+        const consigneeMap = {};
+        consignees.forEach(c => { consigneeMap[c.id] = c.name; });
+        const matched = transactions.filter(t => {
+            const brand = t.variant?.product?.brandName || '';
+            const model = t.variant?.product?.modelName || '';
+            const color = t.variant?.color || '';
+            const sku   = t.variant?.sku || '';
+            return `${brand} ${model} ${color} ${sku}`.toLowerCase().includes(q);
+        });
+        const groups = {};
+        matched.forEach(t => {
+            const tid = t.transactionId;
+            if (!groups[tid]) {
+                groups[tid] = {
+                    orderId: tid,
+                    date: new Date(t.transactionDate),
+                    consigneeId: t.consignee?.id,
+                    consigneeName: consigneeMap[t.consignee?.id] || 'Unknown',
+                    items: [],
+                };
+            }
+            groups[tid].items.push({
+                ...t,
+                finalPrice: Number(t.finalPrice || 0),
+                downpayment: Number(t.downpayment || 0),
+            });
+        });
+        return Object.values(groups)
+            .sort((a, b) => b.date - a.date)
+            .map(g => ({
+                ...g,
+                totalPrice:  g.items.reduce((s, i) => s + i.finalPrice, 0),
+                totalUnpaid: g.items.reduce((s, i) => s + (i.status === 'FULL' ? 0 : i.finalPrice - i.downpayment), 0),
+                status: g.items.some(i => i.status === 'UNPAID') ? 'UNPAID'
+                      : g.items.some(i => i.status === 'PARTIAL') ? 'PARTIAL' : 'FULL',
+            }));
+    }, [itemSearch, transactions, consignees]);
 
     const toggleGroup = (orderId) => {
         setExpandedGroups(prev => {
@@ -241,6 +289,39 @@ const ConsigneesPage = () => {
         }
     };
 
+    // ── Change Price of Item ──────────────────────────────────────────────────
+    const handleOpenPriceEdit = (item) => {
+        setPriceEditItem(item);
+        setNewPriceInput(String(item.finalPrice || ''));
+    };
+
+    const handleUpdatePrice = async (e) => {
+        e.preventDefault();
+        if (!priceEditItem) return;
+        const val = parseFloat(newPriceInput);
+        if (isNaN(val) || val < 0) {
+            showToast('Please enter a valid price.', 'error');
+            return;
+        }
+        if (priceEditItem.downpayment && val < priceEditItem.downpayment) {
+            showToast(`New price cannot be lower than the already received downpayment (${fmt(priceEditItem.downpayment)}).`, 'error');
+            return;
+        }
+
+        setSavingPrice(true);
+        try {
+            await axios.patch(`${BASE}/api/transactions/${priceEditItem.id}/price`, { price: val });
+            await fetchData();
+            showToast(`Price updated to ${fmt(val)}.`, 'success');
+            setPriceEditItem(null);
+            setNewPriceInput('');
+        } catch (err) {
+            showToast(err.response?.data?.error || 'Failed to update price.', 'error');
+        } finally {
+            setSavingPrice(false);
+        }
+    };
+
     // ── Delete Consignee ──────────────────────────────────────────────────────
     const handleDeleteConsignee = async (id) => {
         try {
@@ -340,9 +421,135 @@ const ConsigneesPage = () => {
                 </div>
             </div>
 
-            {/* ── Right Panel ─────────────────────────────────────────── */}
+            {/* ── Right Panel ──────────────────────────────────────── */}
             <div className="flex-1 flex flex-col h-[60vh] md:h-full overflow-hidden bg-stone-100">
-                {!selectedConsigneeId ? (
+
+                {/* Global search bar — always visible */}
+                <div className="px-4 py-3 bg-white border-b border-stone-200 shrink-0">
+                    <div className="relative">
+                        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />
+                        <input
+                            type="text"
+                            value={itemSearch}
+                            onChange={e => setItemSearch(e.target.value)}
+                            placeholder="Search paddles across all consignees…"
+                            className="w-full pl-9 pr-8 py-2 text-sm border border-stone-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-400 outline-none bg-stone-50 transition-all"
+                        />
+                        {itemSearch && (
+                            <button onClick={() => setItemSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-700">
+                                <X size={14} />
+                            </button>
+                        )}
+                    </div>
+                    {itemSearch.trim() && (
+                        <p className="text-[11px] text-zinc-400 mt-1.5 pl-1">
+                            {searchResults.length === 0
+                                ? 'No matching paddles found.'
+                                : `${searchResults.reduce((s, g) => s + g.items.length, 0)} item(s) across ${searchResults.length} order(s)`
+                            }
+                        </p>
+                    )}
+                </div>
+
+                {/* Search results mode */}
+                {itemSearch.trim() ? (
+                    <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                        {searchResults.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center py-16 text-zinc-400 gap-3">
+                                <Search size={36} className="opacity-20" />
+                                <p className="text-sm">No paddles matched "{itemSearch}"</p>
+                            </div>
+                        ) : searchResults.map(group => {
+                            const shortId = String(group.orderId).slice(-6).toUpperCase();
+                            return (
+                                <div key={group.orderId} className="bg-white rounded-2xl border border-stone-200 shadow-sm overflow-hidden">
+                                    <div className="px-5 py-3 bg-stone-50 border-b border-stone-100 flex items-center justify-between">
+                                        <div>
+                                            <div className="flex items-center gap-2">
+                                                <span className="font-mono text-xs text-zinc-400">#{shortId}</span>
+                                                <span className="text-[10px] font-bold bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">{group.consigneeName}</span>
+                                            </div>
+                                            <div className="text-xs text-zinc-500 mt-0.5">
+                                                {group.date.toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })}
+                                            </div>
+                                        </div>
+                                        <div className="text-right">
+                                            {group.status !== 'FULL' ? (
+                                                <>
+                                                    <div className="text-[10px] text-zinc-400 font-bold uppercase">Due</div>
+                                                    <div className="text-sm font-black text-amber-600 font-mono">{fmt(group.totalUnpaid)}</div>
+                                                </>
+                                            ) : (
+                                                <span className="text-xs font-bold text-green-700 bg-green-100 px-2 py-1 rounded-lg">FULLY PAID ✓</span>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <div className="divide-y divide-stone-100">
+                                        {group.items.map(item => {
+                                            const isPaid = item.status === 'FULL';
+                                            const productName = item.variant?.product
+                                                ? `${item.variant.product.brandName} ${item.variant.product.modelName}${item.variant?.color ? ` (${item.variant.color})` : ''}`
+                                                : (item.variant?.sku || '—');
+                                            return (
+                                                <div key={item.id} className="px-5 py-3 flex items-center gap-4 hover:bg-stone-50 transition-colors">
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="font-bold text-zinc-800 text-sm truncate">{productName}</div>
+                                                        <div className="text-xs text-zinc-400 font-mono">{item.variant?.sku}</div>
+                                                    </div>
+                                                    <div className="text-right shrink-0">
+                                                        <div className="font-black text-zinc-900 font-mono text-sm">{fmt(item.finalPrice)}</div>
+                                                        {!isPaid && item.downpayment > 0 && (
+                                                            <div className="text-[10px] text-amber-600 font-bold">DP: {fmt(item.downpayment)}</div>
+                                                        )}
+                                                    </div>
+                                                    <div className="shrink-0 flex items-center gap-1.5">
+                                                        {isPaid ? (
+                                                            <span className="text-[10px] font-bold bg-green-100 text-green-700 px-2 py-1 rounded-md">PAID</span>
+                                                        ) : (
+                                                            <>
+                                                                <span className="text-[10px] font-bold bg-amber-100 text-amber-700 px-2 py-1 rounded-md">{item.status}</span>
+                                                                <button
+                                                                    onClick={() => handleOpenPriceEdit(item)}
+                                                                    className="px-2 py-1 bg-blue-50 text-blue-600 hover:bg-blue-100 text-[10px] font-bold rounded-md transition-colors flex items-center gap-1 border border-blue-200 shadow-sm"
+                                                                    title="Change Price (Sale/Discount)"
+                                                                >
+                                                                    <Tag size={10} /> Price
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => {
+                                                                        setSelectedConsigneeId(group.consigneeId);
+                                                                        setItemSearch('');
+                                                                        setTimeout(() => openPayModal(group), 50);
+                                                                    }}
+                                                                    className="px-2 py-1 bg-green-600 hover:bg-green-700 text-white text-[10px] font-bold rounded-md transition-colors flex items-center gap-1 shadow-sm"
+                                                                >
+                                                                    <CreditCard size={10} /> Pay
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => setReturnConfirmItem({ item, group })}
+                                                                    disabled={returningItem === item.id}
+                                                                    className="px-2 py-1 text-white text-[10px] font-bold rounded-md transition-colors flex items-center gap-1 shadow-sm disabled:opacity-50"
+                                                                    style={{ backgroundColor: '#d97706' }}
+                                                                    onMouseEnter={e => e.currentTarget.style.backgroundColor = '#b45309'}
+                                                                    onMouseLeave={e => e.currentTarget.style.backgroundColor = '#d97706'}
+                                                                >
+                                                                    {returningItem === item.id ? <Loader2 size={10} className="animate-spin" /> : <Undo2 size={10} />}
+                                                                    Return
+                                                                </button>
+                                                            </>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                ) : (
+                /* Normal consignee view when search is empty */
+                !selectedConsigneeId ? (
                     <div className="flex-1 flex flex-col items-center justify-center text-zinc-400 gap-3">
                         <Users size={48} className="opacity-20" />
                         <p className="text-sm">Select a consignee to view their consignments.</p>
@@ -459,6 +666,13 @@ const ConsigneesPage = () => {
                                                                                 {item.status}
                                                                             </span>
                                                                             <button
+                                                                                onClick={() => handleOpenPriceEdit(item)}
+                                                                                className="px-2 py-1 bg-blue-50 text-blue-600 hover:bg-blue-100 text-[10px] font-bold rounded-md transition-colors flex items-center gap-1 border border-blue-200 shadow-sm"
+                                                                                title="Change Price (Sale/Discount)"
+                                                                            >
+                                                                                <Tag size={11} /> Price
+                                                                            </button>
+                                                                            <button
                                                                                 onClick={() => {
                                                                                     // Pay just this single item
                                                                                     openPayModal({
@@ -501,7 +715,8 @@ const ConsigneesPage = () => {
                             )}
                         </div>
                     </>
-                )}
+                )
+                )} {/* end: itemSearch ternary */}
             </div>
 
             {/* ── Add Consignee Modal ─────────────────────────────────── */}
@@ -730,6 +945,90 @@ const ConsigneesPage = () => {
                     </div>
                 );
             })()}
+            {/* ── Change Price Modal ─────────────────────────────────────── */}
+            {priceEditItem && (() => {
+                const productName = priceEditItem.variant?.product
+                    ? `${priceEditItem.variant.product.brandName} ${priceEditItem.variant.product.modelName}${priceEditItem.variant?.color ? ` (${priceEditItem.variant.color})` : ''}`
+                    : (priceEditItem.variant?.sku || 'this item');
+                const origPrice = priceEditItem.finalPrice || 0;
+                const downpayment = priceEditItem.downpayment || 0;
+
+                return (
+                    <div className="fixed inset-0 bg-zinc-950/60 z-[250] flex items-center justify-center p-4">
+                        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-fade-in-up">
+                            <div className="px-6 py-4 bg-blue-600 flex items-center justify-between">
+                                <div className="flex items-center gap-2 text-white font-bold text-base">
+                                    <Tag size={18} />
+                                    <span>Change Selling Price</span>
+                                </div>
+                                <button
+                                    onClick={() => setPriceEditItem(null)}
+                                    className="text-white/80 hover:text-white p-1 rounded-full hover:bg-white/10 transition-colors"
+                                >
+                                    <X size={16} />
+                                </button>
+                            </div>
+                            <form onSubmit={handleUpdatePrice} className="p-6">
+                                <div className="mb-4">
+                                    <div className="text-xs text-zinc-400 font-bold uppercase tracking-wider mb-1">Paddle</div>
+                                    <div className="text-sm font-bold text-zinc-800">{productName}</div>
+                                    <div className="text-xs text-zinc-400 font-mono mt-0.5">{priceEditItem.variant?.sku}</div>
+                                </div>
+
+                                <div className="bg-stone-50 rounded-xl p-3 border border-stone-200 mb-4 flex justify-between items-center text-xs">
+                                    <span className="text-zinc-500 font-medium">Current Price:</span>
+                                    <span className="font-mono font-bold text-zinc-800">{fmt(origPrice)}</span>
+                                </div>
+
+                                {downpayment > 0 && (
+                                    <div className="bg-amber-50 rounded-xl p-3 border border-amber-200 mb-4 text-xs text-amber-800">
+                                        <span className="font-bold">Notice:</span> Downpayment of <strong>{fmt(downpayment)}</strong> has already been received. New price must be at least {fmt(downpayment)}.
+                                    </div>
+                                )}
+
+                                <div className="mb-5">
+                                    <label className="text-xs font-bold text-zinc-600 mb-1.5 block uppercase tracking-wider">
+                                        New Agreed Price (₱)
+                                    </label>
+                                    <input
+                                        type="number"
+                                        step="any"
+                                        min={downpayment > 0 ? downpayment : 0}
+                                        autoFocus
+                                        required
+                                        value={newPriceInput}
+                                        onChange={e => setNewPriceInput(e.target.value)}
+                                        placeholder="0.00"
+                                        className="w-full px-3.5 py-2.5 border-2 border-stone-200 rounded-xl focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none font-mono text-base font-bold text-zinc-900 transition-all"
+                                    />
+                                    <p className="text-[11px] text-zinc-400 mt-1.5">
+                                        Adjust price in case of discounts or special sales without returning item to stock.
+                                    </p>
+                                </div>
+
+                                <div className="flex gap-3">
+                                    <button
+                                        type="button"
+                                        onClick={() => setPriceEditItem(null)}
+                                        className="flex-1 py-2.5 rounded-xl border border-stone-200 text-zinc-600 font-bold text-sm hover:bg-stone-50 transition-colors"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        disabled={savingPrice}
+                                        className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm transition-colors shadow-sm disabled:opacity-50 flex items-center justify-center gap-2"
+                                    >
+                                        {savingPrice ? <Loader2 size={16} className="animate-spin" /> : null}
+                                        {savingPrice ? 'Saving...' : 'Save Price'}
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                );
+            })()}
+
             {/* ── Delete Confirm Modal ────────────────────────────────────── */}
             {deleteConfirm && (
                 <div className="fixed inset-0 bg-zinc-950/60 z-[300] flex items-center justify-center p-4">
